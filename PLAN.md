@@ -150,7 +150,7 @@ Both are unofficial. The API route is simply the better-engineered version of
 the same idea. Keep a DOM scraper as a last-resort fallback only.
 
 **Endpoints — confirmed 2026-09-16** against live sites. Full results in
-[`tools/probes/FINDINGS.md`](tools/probes/FINDINGS.md).
+[`tools/FINDINGS.md`](tools/FINDINGS.md).
 
 - ChatGPT: bearer token from `GET /api/auth/session` (cookies alone are **not**
   enough); list `GET /backend-api/conversations?offset=&limit=&order=updated`;
@@ -303,7 +303,7 @@ confirmed viable on both; branching confirmed real (67 nodes vs a 61-node main
 path); Claude's `tree=True` found to be mandatory rather than optional; six
 ChatGPT content types and two Claude ones catalogued; four traps found that
 would each have been a bug. [`SPEC.md`](SPEC.md) revised to v0.2 against real
-data. Findings: [`tools/probes/FINDINGS.md`](tools/probes/FINDINGS.md).
+data. Findings: [`tools/FINDINGS.md`](tools/FINDINGS.md).
 
 **Phase 1 — format + reader.** `SPEC.md` and the `.chat`/`.chatpack` parser.
 Organizer ingests a `.chat` file → SQLite → conversation list → thread view →

@@ -2,7 +2,7 @@
 
 > **Status: confirmed against live data.** v0.1 was written from documentation
 > and guesswork. This revision is corrected against Phase 0 probe results from
-> claude.ai and chatgpt.com — see [`tools/probes/FINDINGS.md`](tools/probes/FINDINGS.md).
+> claude.ai and chatgpt.com — see [`tools/FINDINGS.md`](tools/FINDINGS.md).
 > Remaining gaps are listed at the bottom.
 
 ## Why a format at all
@@ -163,7 +163,7 @@ lost.
 | ChatGPT | canonical |
 |---|---|
 | `conversation_id` | `providerConvId` |
-| `mapping[id].parent` | `parentId` (root node has `message: null` — skip it) |
+| `mapping[id].parent` | `parentId` — but see **dropped nodes** below |
 | `current_node` | `currentLeafId` |
 | `author.role` | `role` (`user` / `assistant` / `tool` pass through) |
 | `content_type: "text"` | `text`, joining `parts[]` |
@@ -180,6 +180,29 @@ lost.
 addressed to the user; anything else means the model is calling a tool. Without
 this rule, every Python call renders as a normal code block and the execution
 output has no parent.
+
+### Dropped nodes — reattach, never re-root
+
+Every provider emits nodes a capturer won't keep: ChatGPT's root node has
+`message: null`, Claude uses a sentinel uuid
+(`00000000-0000-4000-8000-000000000000`) for "no parent", and both emit messages
+whose content maps to no blocks at all.
+
+Dropping such a node orphans its children. Setting an orphan's `parentId` to
+`null` looks harmless and is not — it silently severs the thread at that point
+and turns the remainder into a second root. This happened in a real ChatGPT
+capture: a mid-conversation message came back as a root because its parent had
+produced zero blocks.
+
+The rule: build a parent map over **every raw node, including the ones you
+drop**, then for each surviving message walk up until you reach a surviving
+ancestor and attach there. Only a message with no surviving ancestor at all
+becomes a root. `spliceParents()` in
+[`packages/adapters/shared.js`](packages/adapters/shared.js) implements this,
+with tests.
+
+A reader can use root count as a cheap integrity check: more than one root means
+real branching or a splice, and is worth surfacing rather than hiding.
 
 ## Rules
 

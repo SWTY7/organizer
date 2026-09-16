@@ -7,7 +7,7 @@ conversations, neither lets you highlight an answer or pin a note to it, and
 neither helps you find the one chat where you actually worked something out.
 This is a library and annotation layer over chats you already had.
 
-**Status: Phase 0 complete, Phase 1 starting.** Nothing is usable yet. See [PLAN.md](PLAN.md) and [findings](tools/probes/FINDINGS.md).
+**Status: Phase 0 complete, Phase 1 starting.** Nothing is usable yet. See [PLAN.md](PLAN.md) and [findings](tools/FINDINGS.md).
 
 ## Design rules
 
@@ -51,7 +51,8 @@ Adding a provider means writing a capturer. The app never learns what
 |---|---|
 | [`PLAN.md`](PLAN.md) | full plan, phases, risks |
 | [`SPEC.md`](SPEC.md) | the `.chat` interchange format |
-| [`tools/probes/`](tools/probes/) | Phase 0 diagnostic, and [what it found](tools/probes/FINDINGS.md) |
+| [`packages/adapters/`](packages/adapters/) | one file per provider — the reusable core |
+| [`tools/`](tools/) | pasteable probe + exporter, and [what Phase 0 found](tools/FINDINGS.md) |
 
 ## Phases
 

@@ -1,0 +1,8 @@
+{
+  "name": "@organizer/adapters",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Provider adapters: one file per LLM, converting to the .chat format",
+  "main": "index.js"
+}

@@ -1,0 +1,16 @@
+{
+  "name": "organizer",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "One library for your AI chats — across Claude, ChatGPT and whatever comes next",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "test": "node --test \"packages/**/*.test.mjs\"",
+    "check": "npm run test && npm run build"
+  },
+  "license": "MIT"
+}
