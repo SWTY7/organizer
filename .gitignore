@@ -1,0 +1,26 @@
+node_modules/
+dist/
+build/
+.vite/
+*.tsbuildinfo
+
+# Probe output and any real chat data. These contain actual conversation
+# content — they must never be committed.
+probe-*-raw-*.json
+probe-*.json
+*.chat.json
+*.chatpack
+/samples/
+/fixtures/private/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Env
+.env
+.env.*
+!.env.example
