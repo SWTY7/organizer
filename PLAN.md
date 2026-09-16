@@ -331,7 +331,7 @@ Organizer ingests a `.chat` file → SQLite → conversation list → thread vie
 full-text search. Plus the zip-export backfill adapter, since that's how you get
 your existing history in once.
 
-**Phase 2 — capturer.** Unpacked MV3 extension: one-click capture, then delta
+**Phase 2 — capturer. ✅ Done.** Unpacked MV3 extension: a selection list, then delta
 sync, emitting `.chat`/`.chatpack`. This is the phase that fixes the friction you
 raised, and it lands early now rather than last.
 

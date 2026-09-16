@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>organizer — capture</title>
+<style>
+  :root {
+    --bg: #ffffff; --bg-sub: #f6f6f5; --bg-raise: #ffffff;
+    --fg: #1a1a18; --fg-dim: #6b6b66; --fg-faint: #9a9a94;
+    --line: #e4e4e1; --line-soft: #efefec;
+    --accent: #c96442; --accent-soft: #fdf0eb;
+    --claude: #c96442; --chatgpt: #10a37f;
+    --ok: #2d7d46; --warn: #b26a00; --bad: #b3261e;
+    --radius: 10px;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1a18; --bg-sub: #222220; --bg-raise: #262623;
+      --fg: #ececea; --fg-dim: #a3a39d; --fg-faint: #75756f;
+      --line: #35352f; --line-soft: #2c2c28;
+      --accent: #e08160; --accent-soft: #33241e;
+      --ok: #5cb87a; --warn: #d69a3a; --bad: #e0705c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 15px/1.6 var(--sans); -webkit-font-smoothing: antialiased;
+  }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+
+  .wrap { max-width: 900px; margin: 0 auto; padding: 32px 24px 80px; }
+  header h1 { font-size: 20px; margin: 0 0 4px; letter-spacing: -0.015em; }
+  header p { margin: 0 0 24px; color: var(--fg-dim); font-size: 13.5px; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 22px; }
+  @media (max-width: 680px) { .cards { grid-template-columns: 1fr; } }
+  .card {
+    border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 14px 16px; background: var(--bg-sub);
+  }
+  .card h2 { margin: 0 0 2px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.claude { background: var(--claude); } .dot.chatgpt { background: var(--chatgpt); }
+  .card .status { font-size: 12.5px; color: var(--fg-dim); min-height: 20px; }
+  .card .status.ok { color: var(--ok); } .card .status.bad { color: var(--bad); }
+  .card .actions { margin-top: 10px; display: flex; gap: 8px; }
+
+  .btn {
+    border: 1px solid var(--line); background: var(--bg-raise); color: var(--fg);
+    border-radius: 8px; padding: 6px 12px; font-size: 13.5px;
+  }
+  .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 500; }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.07); color: #fff; }
+
+  .toolbar {
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    padding: 10px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
+    position: sticky; top: 0; background: var(--bg); z-index: 2;
+  }
+  #filter {
+    flex: 1; min-width: 180px; padding: 6px 10px; border: 1px solid var(--line);
+    border-radius: 8px; background: var(--bg-raise);
+  }
+  .linkbtn { background: none; border: 0; color: var(--accent); font-size: 13px; padding: 4px 2px; text-decoration: underline; }
+  .muted { color: var(--fg-faint); font-size: 12.5px; }
+
+  label.check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-dim); white-space: nowrap; }
+
+  ul.list { list-style: none; margin: 0; padding: 0; }
+  ul.list li {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 8px 8px; border-bottom: 1px solid var(--line-soft); border-radius: 6px;
+  }
+  ul.list li:hover { background: var(--bg-sub); }
+  ul.list input[type=checkbox] { margin-top: 4px; flex: none; width: 15px; height: 15px; accent-color: var(--accent); }
+  .ti { min-width: 0; flex: 1; }
+  .ti .t { font-size: 14px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ti .m { font-size: 11.5px; color: var(--fg-faint); display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+  .pill {
+    font-size: 10.5px; border: 1px solid var(--line); border-radius: 999px;
+    padding: 0 6px; color: var(--fg-dim);
+  }
+  .pill.new { border-color: var(--ok); color: var(--ok); }
+  .pill.upd { border-color: var(--warn); color: var(--warn); }
+
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--bg-raise);
+    border-top: 1px solid var(--line); padding: 12px 24px;
+    display: flex; gap: 14px; align-items: center; justify-content: center;
+    box-shadow: 0 -2px 14px rgba(0,0,0,.06);
+  }
+  .bar .count { font-size: 13.5px; color: var(--fg-dim); }
+  progress { width: 220px; height: 8px; accent-color: var(--accent); }
+
+  .note {
+    border: 1px solid var(--line); background: var(--bg-sub); border-radius: var(--radius);
+    padding: 12px 14px; font-size: 13px; color: var(--fg-dim); margin-top: 20px;
+  }
+  .note b { color: var(--fg); font-weight: 500; }
+  .note code { font-family: var(--mono); font-size: 0.88em; background: var(--bg-raise); padding: 0.1em 0.35em; border-radius: 4px; }
+  .empty { padding: 40px 10px; text-align: center; color: var(--fg-dim); font-size: 13.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>organizer — capture</h1>
+    <p>Pick exactly which conversations to save. Nothing is uploaded anywhere;
+       the file downloads to this computer.</p>
+  </header>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="toolbar">
+    <input id="filter" type="search" placeholder="Filter by title…" autocomplete="off">
+    <button class="linkbtn" id="selAll">select all</button>
+    <button class="linkbtn" id="selNone">none</button>
+    <button class="linkbtn" id="selInvert">invert</button>
+    <label class="check"><input type="checkbox" id="onlyNew"> only new &amp; updated</label>
+    <span class="muted" id="shown"></span>
+  </div>
+
+  <ul class="list" id="list"></ul>
+  <div class="empty" id="empty">Load a provider above to choose conversations.</div>
+
+  <div class="note">
+    <b>How this works.</b> The extension reads your conversations through the
+    same endpoints the Claude and ChatGPT web apps use, with the session you are
+    already signed in to. It requests about three conversations per second.
+    Exported files are <code>.chatpack.json</code> — drop them into the reader
+    at <code>localhost:4173</code>.
+  </div>
+</div>
+
+<div class="bar" id="bar" hidden>
+  <span class="count" id="selCount"></span>
+  <progress id="prog" hidden></progress>
+  <button class="btn primary" id="export">Export selected</button>
+</div>
+
+<script type="module" src="manager.js"></script>
+</body>
+</html>

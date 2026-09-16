@@ -7,7 +7,7 @@ conversations, neither lets you highlight an answer or pin a note to it, and
 neither helps you find the one chat where you actually worked something out.
 This is a library and annotation layer over chats you already had.
 
-**Status: Phase 1 — the reader works.** Capture your chats, import them, read
+**Status: Phase 2 — capture and reading both work.** Pick your chats, import them, read
 and search them. Organizing and annotation come next. See [PLAN.md](PLAN.md).
 
 ## Design rules
@@ -59,8 +59,17 @@ You can open `app/index.html` directly instead, and it works, but **nothing will
 be saved**: browsers deny storage to pages loaded from `file://`. The app
 detects this and says so rather than silently losing your library.
 
-To get chats in, see [`tools/`](tools/) — paste one script into your browser
-console, then drop the file it downloads onto the app.
+To get chats in, load [`extension/`](extension/) unpacked in Chrome, pick the
+conversations you want, and drop the downloaded file onto the app. The console
+scripts in [`tools/`](tools/) do the same thing with no install, as a fallback.
+
+To typeset maths instead of showing TeX source, once:
+
+```bash
+npm run math
+```
+
+That vendors KaTeX locally. The app itself never touches the network.
 
 ## Repository
 
@@ -70,6 +79,7 @@ console, then drop the file it downloads onto the app.
 | [`SPEC.md`](SPEC.md) | the `.chat` interchange format |
 | [`packages/adapters/`](packages/adapters/) | one file per provider — the reusable core |
 | [`app/`](app/) | the reader — one self-contained HTML file |
+| [`extension/`](extension/) | one-click capture with a selection list |
 | [`tools/`](tools/) | pasteable probe + exporter, and [what Phase 0 found](tools/FINDINGS.md) |
 | [`fixtures/`](fixtures/) | synthetic `.chat` files for testing |
 
@@ -77,7 +87,7 @@ console, then drop the file it downloads onto the app.
 
 - [x] **0 — spike.** Endpoints, shapes and delta-sync viability confirmed against live data.
 - [x] **1 — format + reader.** `.chat` parser, import, browse, full-text search.
-- [ ] **2 — capturer.** One-click capture and delta sync from a browser extension.
+- [x] **2 — capturer.** One-click capture with a selection list, and delta sync.
 - [ ] **3 — organizer.** Folders, tags, smart folders, bulk actions.
 - [ ] **4 — annotation.** Notes, highlights, snippet library, overlay edits.
 - [ ] **5 — power.** Semantic search, compile snippets, more providers.

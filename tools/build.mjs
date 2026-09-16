@@ -11,7 +11,7 @@
  * fixed list below and that imports are only used for names defined in it.
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -109,6 +109,16 @@ async function build() {
     const kb = (Buffer.byteLength(bundle) / 1024).toFixed(1);
     console.log(`  ${t.out.padEnd(24)} ${kb} KB`);
   }
+  // The extension loads the adapters as real ES modules, so it just needs
+  // copies inside its own directory — Chrome cannot reach outside it.
+  const extDir = join(root, 'extension', 'adapters');
+  await mkdir(extDir, { recursive: true });
+  for (const m of MODULES) {
+    const name = m.split('/').pop();
+    await copyFile(join(root, m), join(extDir, name));
+  }
+  console.log(`  extension/adapters/     ${MODULES.length} modules copied`);
+
   console.log('done');
 }
 
