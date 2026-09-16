@@ -7,7 +7,7 @@ conversations, neither lets you highlight an answer or pin a note to it, and
 neither helps you find the one chat where you actually worked something out.
 This is a library and annotation layer over chats you already had.
 
-**Status: Phase 0.** Nothing is usable yet. See [PLAN.md](PLAN.md).
+**Status: Phase 0 complete, Phase 1 starting.** Nothing is usable yet. See [PLAN.md](PLAN.md) and [findings](tools/probes/FINDINGS.md).
 
 ## Design rules
 
@@ -51,11 +51,11 @@ Adding a provider means writing a capturer. The app never learns what
 |---|---|
 | [`PLAN.md`](PLAN.md) | full plan, phases, risks |
 | [`SPEC.md`](SPEC.md) | the `.chat` interchange format |
-| [`tools/probes/`](tools/probes/) | Phase 0 diagnostic — confirms real API shapes |
+| [`tools/probes/`](tools/probes/) | Phase 0 diagnostic, and [what it found](tools/probes/FINDINGS.md) |
 
 ## Phases
 
-- [ ] **0 — spike.** Confirm the endpoints, shapes and whether delta sync is possible.
+- [x] **0 — spike.** Endpoints, shapes and delta-sync viability confirmed against live data.
 - [ ] **1 — format + reader.** `.chat` parser, import, browse, full-text search.
 - [ ] **2 — capturer.** One-click capture and delta sync from a browser extension.
 - [ ] **3 — organizer.** Folders, tags, smart folders, bulk actions.

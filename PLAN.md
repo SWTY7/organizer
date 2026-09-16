@@ -149,13 +149,21 @@ page itself fetched:
 Both are unofficial. The API route is simply the better-engineered version of
 the same idea. Keep a DOM scraper as a last-resort fallback only.
 
-**Endpoints to confirm during the spike** (undocumented, recalled — verify at
-runtime rather than trusting this table):
+**Endpoints — confirmed 2026-09-16** against live sites. Full results in
+[`tools/probes/FINDINGS.md`](tools/probes/FINDINGS.md).
 
-- ChatGPT: list `GET /backend-api/conversations?offset=&limit=`;
+- ChatGPT: bearer token from `GET /api/auth/session` (cookies alone are **not**
+  enough); list `GET /backend-api/conversations?offset=&limit=&order=updated`;
   detail `GET /backend-api/conversation/{id}`
-- Claude: list `GET /api/organizations/{org_uuid}/chat_conversations`;
-  detail `…/chat_conversations/{uuid}?tree=True&rendering_mode=messages`
+- Claude: cookies suffice; pick the org whose `capabilities` include `chat` from
+  `GET /api/organizations` (accounts can have several); list
+  `GET /api/organizations/{org}/chat_conversations`; detail
+  `…/chat_conversations/{uuid}?tree=True&rendering_mode=messages` — **those query
+  params are mandatory**, without them there is no `content[]` and every
+  thinking block is lost.
+
+Both list endpoints carry an update timestamp, so **delta sync works**: diff the
+list, fetch detail only for what changed.
 
 The capturer must probe and fail loudly with a clear message if the shape has
 changed, never silently import a half-parsed conversation.
@@ -290,11 +298,12 @@ README.
 
 ## 10. Phases
 
-**Phase 0 — spike (half a day, no UI).** In DevTools on each site, call the
-endpoints in §4.1 and dump the responses. Confirm the shapes, confirm what auth
-they need, test whether CSP blocks a bookmarklet. Then write one real
-`.chat.json` by hand from each. This de-risks the whole project and *will* change
-§3 and §5 in ways the documentation cannot predict. Nothing else starts first.
+**Phase 0 — spike. ✅ Done 2026-09-16.** Probed both sites live. Delta sync
+confirmed viable on both; branching confirmed real (67 nodes vs a 61-node main
+path); Claude's `tree=True` found to be mandatory rather than optional; six
+ChatGPT content types and two Claude ones catalogued; four traps found that
+would each have been a bug. [`SPEC.md`](SPEC.md) revised to v0.2 against real
+data. Findings: [`tools/probes/FINDINGS.md`](tools/probes/FINDINGS.md).
 
 **Phase 1 — format + reader.** `SPEC.md` and the `.chat`/`.chatpack` parser.
 Organizer ingests a `.chat` file → SQLite → conversation list → thread view →
