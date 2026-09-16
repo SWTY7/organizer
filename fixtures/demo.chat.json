@@ -1,0 +1,152 @@
+{
+  "schemaVersion": "0.2",
+  "kind": "conversation",
+  "id": "demo0000000000000000000000000000000000000000000000000000000000000",
+  "provider": "claude",
+  "providerConvId": "demo-conversation-0001",
+  "title": "Demo — every block type the reader must handle",
+  "createdAt": "2026-09-01T10:00:00.000Z",
+  "updatedAt": "2026-09-01T10:30:00.000Z",
+  "model": "claude-opus-5",
+  "sourceUrl": "https://claude.ai/chat/demo-conversation-0001",
+  "currentLeafId": "m-branch-b2",
+  "summary": "Synthetic fixture. Exercises text, thinking, code, tool calls, attachments, unknown blocks and a branch point.",
+  "starred": true,
+  "projectRef": { "id": "proj-demo-0001", "name": "Fixtures" },
+  "messages": [
+    {
+      "id": "m-1",
+      "parentId": null,
+      "role": "user",
+      "createdAt": "2026-09-01T10:00:00.000Z",
+      "model": null,
+      "stableKey": "sha256:demo1",
+      "status": "complete",
+      "hidden": false,
+      "content": [
+        {
+          "type": "text",
+          "text": "Show me **every** kind of block. Include a table, a list, some `inline code`, and math like $E = mc^2$."
+        }
+      ]
+    },
+    {
+      "id": "m-2",
+      "parentId": "m-1",
+      "role": "assistant",
+      "createdAt": "2026-09-01T10:00:20.000Z",
+      "model": "claude-opus-5",
+      "stableKey": "sha256:demo2",
+      "stopReason": "end_turn",
+      "status": "complete",
+      "hidden": false,
+      "content": [
+        {
+          "type": "thinking",
+          "summaries": [
+            "Deciding which block types to demonstrate.",
+            "Checking that summaries render as a collapsed list.",
+            "Confirming the reader handles an empty thinking string."
+          ]
+        },
+        {
+          "type": "text",
+          "text": "## Headings work\n\nAnd so do paragraphs, with *emphasis*, **strong**, `inline code`, and a [link](https://example.com).\n\n### A list\n\n- first item\n- second item\n- third item\n\n### An ordered list\n\n1. step one\n2. step two\n\n### A table\n\n| Block | Renders as |\n|---|---|\n| `text` | markdown |\n| `thinking` | collapsed summaries |\n| `tool_use` | collapsed call |\n\n> A blockquote, for good measure.\n\nDisplay math: $$\\int_0^\\infty e^{-x^2}\\,dx = \\frac{\\sqrt\\pi}{2}$$\n\n---\n\nAnd a fenced block follows."
+        },
+        {
+          "type": "code",
+          "lang": "python",
+          "text": "import numpy as np\n\ndef gaussian(x, mu=0.0, sigma=1.0):\n    return np.exp(-((x - mu) ** 2) / (2 * sigma ** 2))\n\nprint(gaussian(np.linspace(-3, 3, 7)))"
+        }
+      ]
+    },
+    {
+      "id": "m-3",
+      "parentId": "m-2",
+      "role": "assistant",
+      "createdAt": "2026-09-01T10:01:00.000Z",
+      "model": "claude-opus-5",
+      "stableKey": "sha256:demo3",
+      "status": "complete",
+      "hidden": false,
+      "content": [
+        {
+          "type": "tool_use",
+          "name": "python",
+          "lang": "python",
+          "text": "print(sum(range(101)))"
+        }
+      ]
+    },
+    {
+      "id": "m-4",
+      "parentId": "m-3",
+      "role": "tool",
+      "createdAt": "2026-09-01T10:01:02.000Z",
+      "model": null,
+      "stableKey": "sha256:demo4",
+      "status": "complete",
+      "hidden": false,
+      "content": [
+        { "type": "tool_result", "text": "5050" }
+      ]
+    },
+    {
+      "id": "m-5",
+      "parentId": "m-4",
+      "role": "user",
+      "createdAt": "2026-09-01T10:02:00.000Z",
+      "model": null,
+      "stableKey": "sha256:demo5",
+      "status": "complete",
+      "hidden": false,
+      "content": [
+        { "type": "text", "text": "Here is a screenshot and a file." },
+        { "type": "image", "srcRef": "file-service://demo-asset-1", "width": 1280, "height": 720 },
+        { "type": "file", "srcRef": "https://example.invalid/demo.pdf", "filename": "notes.pdf", "mime": "application/pdf" }
+      ]
+    },
+    {
+      "id": "m-branch-a1",
+      "parentId": "m-5",
+      "role": "assistant",
+      "createdAt": "2026-09-01T10:03:00.000Z",
+      "model": "claude-opus-5",
+      "stableKey": "sha256:demoA1",
+      "stopReason": "end_turn",
+      "status": "complete",
+      "hidden": false,
+      "content": [
+        { "type": "text", "text": "**Branch A.** This is the first answer, the one that was replaced. It should still be reachable through the branch switcher above." }
+      ]
+    },
+    {
+      "id": "m-branch-b1",
+      "parentId": "m-5",
+      "role": "assistant",
+      "createdAt": "2026-09-01T10:04:00.000Z",
+      "model": "claude-opus-5",
+      "stableKey": "sha256:demoB1",
+      "status": "complete",
+      "hidden": false,
+      "content": [
+        { "type": "text", "text": "**Branch B.** This is the regenerated answer, and it continues below. The reader should follow this one by default, because `currentLeafId` points into this subtree." }
+      ]
+    },
+    {
+      "id": "m-branch-b2",
+      "parentId": "m-branch-b1",
+      "role": "assistant",
+      "createdAt": "2026-09-01T10:05:00.000Z",
+      "model": "claude-opus-5",
+      "stableKey": "sha256:demoB2",
+      "stopReason": "end_turn",
+      "status": "in_progress",
+      "hidden": false,
+      "content": [
+        { "type": "text", "text": "Still generating when this was captured — the status tag should show." },
+        { "type": "some_future_block_type", "meta": { "note": "Unknown types must be preserved and shown, never dropped." } }
+      ]
+    }
+  ]
+}

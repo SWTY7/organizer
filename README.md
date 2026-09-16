@@ -7,7 +7,8 @@ conversations, neither lets you highlight an answer or pin a note to it, and
 neither helps you find the one chat where you actually worked something out.
 This is a library and annotation layer over chats you already had.
 
-**Status: Phase 0 complete, Phase 1 starting.** Nothing is usable yet. See [PLAN.md](PLAN.md) and [findings](tools/FINDINGS.md).
+**Status: Phase 1 — the reader works.** Capture your chats, import them, read
+and search them. Organizing and annotation come next. See [PLAN.md](PLAN.md).
 
 ## Design rules
 
@@ -45,6 +46,22 @@ better reason than convenience.
 Adding a provider means writing a capturer. The app never learns what
 "ChatGPT" means.
 
+## Running it
+
+```bash
+npm start
+```
+
+Opens the reader at `http://localhost:4173`. No dependencies to install — the
+server is ~40 lines of plain Node.
+
+You can open `app/index.html` directly instead, and it works, but **nothing will
+be saved**: browsers deny storage to pages loaded from `file://`. The app
+detects this and says so rather than silently losing your library.
+
+To get chats in, see [`tools/`](tools/) — paste one script into your browser
+console, then drop the file it downloads onto the app.
+
 ## Repository
 
 | Path | What |
@@ -52,12 +69,14 @@ Adding a provider means writing a capturer. The app never learns what
 | [`PLAN.md`](PLAN.md) | full plan, phases, risks |
 | [`SPEC.md`](SPEC.md) | the `.chat` interchange format |
 | [`packages/adapters/`](packages/adapters/) | one file per provider — the reusable core |
+| [`app/`](app/) | the reader — one self-contained HTML file |
 | [`tools/`](tools/) | pasteable probe + exporter, and [what Phase 0 found](tools/FINDINGS.md) |
+| [`fixtures/`](fixtures/) | synthetic `.chat` files for testing |
 
 ## Phases
 
 - [x] **0 — spike.** Endpoints, shapes and delta-sync viability confirmed against live data.
-- [ ] **1 — format + reader.** `.chat` parser, import, browse, full-text search.
+- [x] **1 — format + reader.** `.chat` parser, import, browse, full-text search.
 - [ ] **2 — capturer.** One-click capture and delta sync from a browser extension.
 - [ ] **3 — organizer.** Folders, tags, smart folders, bulk actions.
 - [ ] **4 — annotation.** Notes, highlights, snippet library, overlay edits.

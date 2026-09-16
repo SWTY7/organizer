@@ -8,6 +8,7 @@
     "packages/*"
   ],
   "scripts": {
+    "start": "node tools/serve.mjs",
     "build": "node tools/build.mjs",
     "test": "node --test \"packages/**/*.test.mjs\"",
     "check": "npm run test && npm run build"

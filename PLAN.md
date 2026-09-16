@@ -180,6 +180,27 @@ changed, never silently import a half-parsed conversation.
 For a personal tool, an unpacked extension is the clear answer — it removes the
 entire store-review risk that made me put this in Phase 4 originally.
 
+**If this ever ships to other people**, the console-paste flow is not an option
+and neither is a plain website. Same-origin policy means a page at
+`organizer.app` cannot fetch `claude.ai/api/…` with the visitor's cookies, ever.
+Only an extension (granted host permissions, fetching from its background
+worker) or a desktop app with its own embedded login can do it. The ranking:
+
+| Route | User effort | Catch |
+|---|---|---|
+| Extension, Web Store | one click | review takes days–weeks, $5 fee, and an extension built to pull data out of ChatGPT/Claude may draw policy scrutiny |
+| Extension, unpacked | download, enable dev mode, load folder | no review, but four steps and a scary toggle — fine personally, fails design rule 1 for anyone else |
+| Desktop app | install | cannot see browser cookies; needs its own embedded login. Reading Chrome's on-disk cookie store is technically possible and indistinguishable from malware — ruled out |
+
+Note also that **neither provider offers an official API for web chat history**.
+The Anthropic and OpenAI APIs cover API usage, not claude.ai/chatgpt.com
+conversations, so there is no sanctioned route to swap to.
+
+Public distribution should therefore be a Web Store extension with sync as a
+**button by default** and scheduled background sync strictly opt-in. Silently
+hitting a provider's API on a timer is both more fragile and more likely to read
+as abuse.
+
 ### 4.3 The two capture modes
 
 **One-click capture.** Button on a chat page. Grabs that conversation, writes a

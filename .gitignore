@@ -27,3 +27,6 @@ Thumbs.db
 
 # Exported chat data — real conversation content, never commit
 *.chatpack.json
+
+# …but committed fixtures are synthetic and safe
+!fixtures/*.json
