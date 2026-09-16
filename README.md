@@ -7,8 +7,8 @@ conversations, neither lets you highlight an answer or pin a note to it, and
 neither helps you find the one chat where you actually worked something out.
 This is a library and annotation layer over chats you already had.
 
-**Status: Phase 2 — capture and reading both work.** Pick your chats, import them, read
-and search them. Organizing and annotation come next. See [PLAN.md](PLAN.md).
+**Status: Phase 3 — capture, read and organize.** Pick your chats, import them, file
+them into folders and tags, and search everything. Annotation comes next. See [PLAN.md](PLAN.md).
 
 ## Design rules
 
@@ -88,7 +88,7 @@ That vendors KaTeX locally. The app itself never touches the network.
 - [x] **0 — spike.** Endpoints, shapes and delta-sync viability confirmed against live data.
 - [x] **1 — format + reader.** `.chat` parser, import, browse, full-text search.
 - [x] **2 — capturer.** One-click capture with a selection list, and delta sync.
-- [ ] **3 — organizer.** Folders, tags, smart folders, bulk actions.
+- [x] **3 — organizer.** Folders, tags, saved searches, bulk actions, drag-to-file.
 - [ ] **4 — annotation.** Notes, highlights, snippet library, overlay edits.
 - [ ] **5 — power.** Semantic search, compile snippets, more providers.
 

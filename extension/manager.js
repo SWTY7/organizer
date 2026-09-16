@@ -24,6 +24,8 @@ const P = new Map(ADAPTERS.map((a) => [a.id, {
 const selected = new Set();       // `${providerId}:${conversationId}`
 let filterText = '';
 let onlyNew = false;
+let onlyStar = false;
+let groupBy = 'none';
 let exporting = false;
 
 /* Loading is tracked per provider, not globally: the two are independent
@@ -143,12 +145,47 @@ function visibleRows() {
     for (const item of st.items) {
       const state = changeState(id, item);
       if (onlyNew && !state) continue;
+      if (onlyStar && !item.facets?.starred) continue;
       if (filterText && !(item.title || '').toLowerCase().includes(filterText)) continue;
       rows.push({ providerId: id, item, state, key: `${id}:${item.id}` });
     }
   }
   rows.sort((a, b) => (dateOf(b.item) || 0) - (dateOf(a.item) || 0));
   return rows;
+}
+
+/**
+ * Group on facets the provider's list already carries, so nothing here costs a
+ * detail fetch. What is available differs by provider — ChatGPT's list has no
+ * model at all — so a missing facet lands in an explicit "no model" bucket
+ * rather than silently vanishing.
+ */
+const GROUPERS = {
+  none: null,
+  provider: (r) => P.get(r.providerId).adapter.label,
+  project: (r) => r.item.facets?.project || 'No project',
+  model: (r) => r.item.facets?.model || 'No model on this provider’s list',
+  month: (r) => {
+    const d = dateOf(r.item);
+    return d ? d.toLocaleDateString(undefined, { year: 'numeric', month: 'long' }) : 'No date';
+  },
+};
+
+/** @returns {{name: string, rows: object[]}[]} one entry when grouping is off */
+function grouped(rows) {
+  const fn = GROUPERS[groupBy];
+  if (!fn) return [{ name: null, rows }];
+  const map = new Map();
+  for (const r of rows) {
+    const k = fn(r);
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(r);
+  }
+  // Biggest groups first, but always park the "missing" buckets at the end.
+  const isNone = (n) => /^No /.test(n);
+  return [...map.entries()]
+    .map(([name, rs]) => ({ name, rows: rs }))
+    .sort((a, b) => (isNone(a.name) - isNone(b.name)) || b.rows.length - a.rows.length);
 }
 
 function renderList() {
@@ -164,7 +201,29 @@ function renderList() {
   $('#bar').hidden = !anyLoaded;
   $('#shown').textContent = anyLoaded ? `${rows.length} shown` : '';
 
-  for (const r of rows) {
+  for (const g of grouped(rows)) {
+    if (g.name) {
+      const head = el('li', 'group');
+      head.append(el('span', 'gname', g.name));
+      head.append(el('span', 'gcount', `${g.rows.length}`));
+      const allIn = g.rows.every((r) => selected.has(r.key));
+      const b = el('button', 'linkbtn', allIn ? 'deselect group' : 'select group');
+      b.onclick = () => {
+        for (const r of g.rows) {
+          if (allIn) selected.delete(r.key); else selected.add(r.key);
+        }
+        renderList();
+      };
+      head.append(b);
+      list.append(head);
+    }
+    for (const r of g.rows) renderRow(list, r);
+  }
+  renderCount();
+}
+
+function renderRow(list, r) {
+  {
     const li = el('li');
     const cb = el('input');
     cb.type = 'checkbox';
@@ -182,8 +241,11 @@ function renderList() {
     m.append(el('span', null, P.get(r.providerId).adapter.label));
     m.append(el('span', null, '·'));
     m.append(el('span', null, fmt(dateOf(r.item))));
-    const proj = r.item._raw?.project?.name;
-    if (proj) { m.append(el('span', null, '·')); m.append(el('span', null, proj)); }
+    const f = r.item.facets || {};
+    if (f.starred) m.append(el('span', null, '★'));
+    if (f.project) { m.append(el('span', null, '·')); m.append(el('span', null, f.project)); }
+    if (f.model) { m.append(el('span', null, '·')); m.append(el('span', null, f.model)); }
+    if (f.archived) m.append(el('span', 'pill', 'archived'));
     if (r.state === 'new') m.append(el('span', 'pill new', 'new'));
     if (r.state === 'updated') m.append(el('span', 'pill upd', 'updated'));
     ti.append(m);
@@ -193,7 +255,6 @@ function renderList() {
     li.append(ti);
     list.append(li);
   }
-  renderCount();
 }
 
 function renderCount() {
@@ -283,6 +344,8 @@ $('#filter').addEventListener('input', (e) => {
   renderList();
 });
 $('#onlyNew').addEventListener('change', (e) => { onlyNew = e.target.checked; renderList(); });
+$('#onlyStar').addEventListener('change', (e) => { onlyStar = e.target.checked; renderList(); });
+$('#groupBy').addEventListener('change', (e) => { groupBy = e.target.value; renderList(); });
 $('#selAll').onclick = () => { for (const r of visibleRows()) selected.add(r.key); renderList(); };
 $('#selNone').onclick = () => { selected.clear(); renderList(); };
 $('#selInvert').onclick = () => {

@@ -43,6 +43,13 @@ export const claude = {
       id: c.uuid,
       title: c.name,
       updatedAt: c.updated_at,
+      // Claude's list is rich enough to group by without any detail fetch.
+      facets: {
+        project: c.project?.name || (c.project_uuid ? '(unnamed project)' : null),
+        model: c.model || null,
+        starred: !!c.is_starred,
+        archived: false,
+      },
       _raw: c,
     }));
   },

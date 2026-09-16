@@ -1,0 +1,1018 @@
+/* ==========================================================================
+   organizer — reader + organizer
+
+   No framework, no dependencies, no network calls. Storage is IndexedDB behind
+   the STORE object; swapping in SQLite-WASM later means reimplementing those
+   methods and nothing else.
+
+   Imported conversations are never modified. Everything the user does — folder,
+   tags, star, archive — lives in a separate `meta` store keyed by conversation
+   id, so a re-import overwrites the conversation and leaves the organization
+   untouched.
+   ========================================================================== */
+
+const $ = (s, r = document) => r.querySelector(s);
+const el = (t, cls, txt) => {
+  const n = document.createElement(t);
+  if (cls) n.className = cls;
+  if (txt != null) n.textContent = txt;
+  return n;
+};
+const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const uid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()).slice(2));
+
+/* ------------------------------------------------------------------ store */
+
+const STORES = ['conversations', 'meta', 'folders', 'smart'];
+
+const STORE = {
+  db: null,
+  ephemeral: false,
+  reason: null,
+  mem: { conversations: new Map(), meta: new Map(), folders: new Map(), smart: new Map() },
+
+  async open() {
+    // Chrome denies IndexedDB to file:// and other opaque origins. Fall back to
+    // memory for the session rather than dying, and say so in the UI.
+    try {
+      this.db = await new Promise((res, rej) => {
+        const r = indexedDB.open('organizer', 2);
+        r.onupgradeneeded = () => {
+          const db = r.result;
+          if (!db.objectStoreNames.contains('conversations')) {
+            db.createObjectStore('conversations', { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'convId' });
+          if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
+          if (!db.objectStoreNames.contains('smart')) db.createObjectStore('smart', { keyPath: 'id' });
+        };
+        r.onsuccess = () => res(r.result);
+        r.onerror = () => rej(r.error);
+        r.onblocked = () => rej(new Error('another tab is holding an older version open'));
+      });
+    } catch (e) {
+      this.ephemeral = true;
+      this.reason = e.message;
+    }
+  },
+
+  async put(store, rows) {
+    if (!rows.length) return;
+    if (this.ephemeral) {
+      const key = store === 'meta' ? 'convId' : 'id';
+      for (const r of rows) this.mem[store].set(r[key], r);
+      return;
+    }
+    const tx = this.db.transaction(store, 'readwrite');
+    const os = tx.objectStore(store);
+    for (const r of rows) os.put(r);
+    return new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+  },
+
+  async del(store, keys) {
+    if (!keys.length) return;
+    if (this.ephemeral) { for (const k of keys) this.mem[store].delete(k); return; }
+    const tx = this.db.transaction(store, 'readwrite');
+    const os = tx.objectStore(store);
+    for (const k of keys) os.delete(k);
+    return new Promise((res) => { tx.oncomplete = res; });
+  },
+
+  async all(store) {
+    if (this.ephemeral) return [...this.mem[store].values()];
+    return new Promise((res, rej) => {
+      const r = this.db.transaction(store, 'readonly').objectStore(store).getAll();
+      r.onsuccess = () => res(r.result || []);
+      r.onerror = () => rej(r.error);
+    });
+  },
+
+  async clearAll() {
+    if (this.ephemeral) { for (const s of STORES) this.mem[s].clear(); return; }
+    const tx = this.db.transaction(STORES, 'readwrite');
+    for (const s of STORES) tx.objectStore(s).clear();
+    return new Promise((res) => { tx.oncomplete = res; });
+  },
+};
+
+/* ------------------------------------------------------------------ state */
+
+const S = {
+  convs: [],
+  meta: new Map(),      // convId -> {convId, folderId, tags[], starred, archived}
+  folders: [],          // {id, name, parentId}
+  smart: [],            // {id, name, q}
+  index: new Map(),
+  providers: new Set(),
+  openId: null,
+  query: '',
+  provider: null,
+  view: { kind: 'all', id: null },
+  sel: new Set(),
+  branchPick: new Map(),
+};
+
+const metaOf = (id) =>
+  S.meta.get(id) || { convId: id, folderId: null, tags: [], starred: false, archived: false };
+
+async function setMeta(ids, patch) {
+  const rows = ids.map((id) => {
+    const m = { ...metaOf(id), ...(typeof patch === 'function' ? patch(metaOf(id)) : patch) };
+    S.meta.set(id, m);
+    return m;
+  });
+  await STORE.put('meta', rows);
+}
+
+/* ---------------------------------------------------------------- import */
+
+function readPayload(json, filename) {
+  const out = [];
+  const take = (c) => {
+    if (c && c.kind === 'conversation' && Array.isArray(c.messages)) out.push(c);
+  };
+  if (json && json.kind === 'conversation') take(json);
+  else if (json && Array.isArray(json.conversations)) json.conversations.forEach(take);
+  else if (Array.isArray(json)) json.forEach(take);
+
+  if (!out.length) throw new Error(`${filename}: no conversations found — is this a .chat file?`);
+  for (const c of out) {
+    const v = String(c.schemaVersion || '0');
+    if (!/^0\./.test(v)) throw new Error(`${filename}: schemaVersion ${v} is newer than this reader.`);
+  }
+  return out;
+}
+
+/**
+ * Claude's conversation list carries project membership, so an import can build
+ * the folder tree from Projects the user already made. Only ever seeds a
+ * conversation that has no meta yet — it must not override filing you did
+ * yourself when you re-import.
+ */
+async function seedFolders(convs) {
+  const byName = new Map(S.folders.map((f) => [f.name.toLowerCase(), f]));
+  const newFolders = [];
+  const newMeta = [];
+  for (const c of convs) {
+    const name = c.projectRef?.name;
+    if (!name || S.meta.has(c.id)) continue;
+    let f = byName.get(name.toLowerCase());
+    if (!f) {
+      f = { id: uid(), name, parentId: null };
+      byName.set(name.toLowerCase(), f);
+      newFolders.push(f);
+      S.folders.push(f);
+    }
+    const m = { convId: c.id, folderId: f.id, tags: [], starred: !!c.starred, archived: false };
+    S.meta.set(c.id, m);
+    newMeta.push(m);
+  }
+  await STORE.put('folders', newFolders);
+  await STORE.put('meta', newMeta);
+  return newFolders.length;
+}
+
+async function importFiles(files) {
+  const added = [];
+  const errors = [];
+  for (const f of files) {
+    try {
+      added.push(...readPayload(JSON.parse(await f.text()), f.name));
+    } catch (e) { errors.push(e.message); }
+  }
+  if (added.length) {
+    // Keyed by conversation id, so re-importing an overlapping export updates
+    // in place rather than duplicating the library.
+    await STORE.put('conversations', added);
+    S.meta = new Map((await STORE.all('meta')).map((m) => [m.convId, m]));
+    const seeded = await seedFolders(added);
+    await load();
+    toast(`Imported ${added.length} conversation${added.length > 1 ? 's' : ''}` +
+          (seeded ? `, ${seeded} folder${seeded > 1 ? 's' : ''} from projects` : ''));
+  }
+  if (errors.length) alert(errors.join('\n'));
+}
+
+/* ------------------------------------------------------------- text index */
+
+const blockText = (b) => {
+  if (!b) return '';
+  if (b.type === 'thinking') return [b.text || '', ...(b.summaries || [])].join(' ');
+  return b.text || b.filename || '';
+};
+const convText = (c) =>
+  [c.title, c.summary || '', ...c.messages.flatMap((m) => m.content.map(blockText))].join('\n');
+
+function reindex() {
+  S.index.clear();
+  S.providers = new Set();
+  for (const c of S.convs) {
+    S.index.set(c.id, convText(c).toLowerCase());
+    S.providers.add(c.provider);
+  }
+}
+
+/* -------------------------------------------------------------- filtering */
+
+function inView(c) {
+  const m = metaOf(c.id);
+  switch (S.view.kind) {
+    case 'all': return !m.archived;
+    case 'starred': return m.starred && !m.archived;
+    case 'archived': return m.archived;
+    case 'untagged': return !m.folderId && !m.tags.length && !m.archived;
+    case 'folder': return m.folderId === S.view.id && !m.archived;
+    case 'tag': return m.tags.includes(S.view.id) && !m.archived;
+    default: return !m.archived;
+  }
+}
+
+function matches(c) {
+  if (!inView(c)) return false;
+  if (S.provider && c.provider !== S.provider) return false;
+  if (!S.query) return true;
+  const hay = S.index.get(c.id) || '';
+  return S.query.split(/\s+/).filter(Boolean).every((t) => hay.includes(t));
+}
+
+const shown = () => S.convs.filter(matches);
+
+function snippet(c) {
+  if (!S.query) return '';
+  const terms = S.query.split(/\s+/).filter(Boolean);
+  const raw = convText(c);
+  const low = raw.toLowerCase();
+  let at = -1;
+  for (const t of terms) { const i = low.indexOf(t); if (i >= 0 && (at < 0 || i < at)) at = i; }
+  if (at < 0) return '';
+  const from = Math.max(0, at - 45);
+  let frag = raw.slice(from, from + 190).replace(/\s+/g, ' ');
+  if (from > 0) frag = '…' + frag;
+  let html = esc(frag);
+  for (const t of terms) {
+    html = html.replace(new RegExp(`(${t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'), '<mark>$1</mark>');
+  }
+  return html;
+}
+
+/* ------------------------------------------------------------- rendering */
+
+function renderMath(tex, display) {
+  if (typeof katex !== 'undefined') {
+    try {
+      return katex.renderToString(tex, { displayMode: display, throwOnError: false, output: 'html' });
+    } catch { /* fall through to source */ }
+  }
+  return `<span class="math${display ? ' block' : ''}">${esc(tex)}</span>`;
+}
+
+/** `$…$` collides with currency. Reject "a number, a space, a word". */
+const looksLikeMoney = (t) => /^\d[\d,]*(\.\d+)?\s+\w/.test(t);
+
+function md(src) {
+  const slots = [];
+  const slot = (html) => ` S${slots.push(html) - 1} `;
+  let s = String(src ?? '').replace(/\r\n/g, '\n');
+
+  // Fences, then inline code, then maths — so `$5` in backticks stays currency.
+  s = s.replace(/```([\w+-]*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+    slot(`<pre><code data-lang="${esc(lang)}">${esc(code.replace(/\n$/, ''))}</code></pre>`));
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => slot(`<code>${esc(c)}</code>`));
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => slot(renderMath(m.trim(), true)));
+  s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => slot(renderMath(m.trim(), true)));
+  s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => slot(renderMath(m.trim(), false)));
+  s = s.replace(/\$([^$\n]+)\$/g, (whole, m) =>
+    looksLikeMoney(m) ? whole : slot(renderMath(m, false)));
+
+  s = esc(s);
+
+  const inline = (t) => t
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|\W)\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
+      '<a href="$2" rel="noopener noreferrer" target="_blank">$1</a>');
+
+  const out = [];
+  const lines = s.split('\n');
+  let list = null, para = [], table = null;
+
+  const flushPara = () => { if (para.length) { out.push(`<p>${inline(para.join(' '))}</p>`); para = []; } };
+  const flushList = () => {
+    if (list) {
+      out.push(`<${list.tag}>${list.items.map((i) => `<li>${inline(i)}</li>`).join('')}</${list.tag}>`);
+      list = null;
+    }
+  };
+  const flushTable = () => {
+    if (!table) return;
+    const cells = (r) => r.replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()));
+    const head = `<tr>${cells(table[0]).map((c) => `<th>${c}</th>`).join('')}</tr>`;
+    const body = table.slice(2).map((r) => `<tr>${cells(r).map((c) => `<td>${c}</td>`).join('')}</tr>`).join('');
+    out.push(`<table>${head}${body}</table>`);
+    table = null;
+  };
+  const flushAll = () => { flushPara(); flushList(); flushTable(); };
+
+  for (let li = 0; li < lines.length; li++) {
+    const t = lines[li].trim();
+    if (table) {
+      if (/^\|.*\|$/.test(t)) { table.push(t); continue; }
+      flushTable();
+    }
+    if (!t) { flushAll(); continue; }
+    if (/^ S\d+ $/.test(t)) { flushAll(); out.push(slots[+t.slice(2, -1)]); continue; }
+
+    const h = t.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      flushAll();
+      const n = Math.min(h[1].length, 3);
+      out.push(`<h${n}>${inline(h[2])}</h${n}>`);
+      continue;
+    }
+    if (/^(-{3,}|\*{3,}|_{3,})$/.test(t)) { flushAll(); out.push('<hr>'); continue; }
+    if (/^&gt;\s?/.test(t)) { flushAll(); out.push(`<blockquote>${inline(t.replace(/^&gt;\s?/, ''))}</blockquote>`); continue; }
+
+    if (/^\|.*\|$/.test(t)) {
+      const next = lines[li + 1];
+      if (next && /^\s*\|[\s:|-]+\|\s*$/.test(next)) { flushPara(); flushList(); table = [t]; continue; }
+    }
+
+    const ul = t.match(/^[-*+]\s+(.*)$/);
+    const ol = t.match(/^\d+[.)]\s+(.*)$/);
+    if (ul || ol) {
+      flushPara(); flushTable();
+      const tag = ul ? 'ul' : 'ol';
+      if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+      list.items.push((ul || ol)[1]);
+      continue;
+    }
+    flushList(); flushTable();
+    para.push(t);
+  }
+  flushAll();
+  return out.join('\n').replace(/ S(\d+) /g, (_, i) => slots[+i]);
+}
+
+/* ------------------------------------------------------------ thread path */
+
+function mainPath(conv) {
+  const byId = new Map(conv.messages.map((m) => [m.id, m]));
+  const kids = new Map();
+  for (const m of conv.messages) {
+    if (!kids.has(m.parentId)) kids.set(m.parentId, []);
+    kids.get(m.parentId).push(m);
+  }
+  for (const l of kids.values()) l.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+
+  const roots = kids.get(null) || [];
+  if (!roots.length) return { path: conv.messages.slice(), kids, byId, rootCount: 0 };
+
+  let node = roots[0];
+  const path = [node];
+  for (let i = 0; i < conv.messages.length + 1; i++) {
+    const children = kids.get(node.id) || [];
+    if (!children.length) break;
+    let next = children[0];
+    const picked = S.branchPick.get(node.id);
+    if (picked && byId.has(picked)) next = byId.get(picked);
+    else if (children.length > 1 && conv.currentLeafId) {
+      // Prefer the child whose subtree holds the provider's own leaf.
+      const anc = new Set();
+      let c = byId.get(conv.currentLeafId);
+      while (c) { anc.add(c.id); c = c.parentId ? byId.get(c.parentId) : null; }
+      next = children.find((ch) => anc.has(ch.id)) || children[0];
+    }
+    path.push(next);
+    node = next;
+  }
+  return { path, kids, byId, rootCount: roots.length };
+}
+
+/* -------------------------------------------------------------------- nav */
+
+const folderChildren = (pid) => S.folders.filter((f) => f.parentId === pid)
+  .sort((a, b) => a.name.localeCompare(b.name));
+
+function counts() {
+  const c = { all: 0, starred: 0, archived: 0, untagged: 0, folder: new Map(), tag: new Map() };
+  for (const conv of S.convs) {
+    const m = metaOf(conv.id);
+    if (m.archived) { c.archived++; continue; }
+    c.all++;
+    if (m.starred) c.starred++;
+    if (!m.folderId && !m.tags.length) c.untagged++;
+    if (m.folderId) c.folder.set(m.folderId, (c.folder.get(m.folderId) || 0) + 1);
+    for (const t of m.tags) c.tag.set(t, (c.tag.get(t) || 0) + 1);
+  }
+  return c;
+}
+
+function navItem({ ico, label, n, active, onClick, onDropIds, title }) {
+  const b = el('button', 'nav-item');
+  b.setAttribute('aria-current', String(!!active));
+  if (title) b.title = title;
+  b.append(el('span', 'ico', ico));
+  b.append(el('span', 'lbl', label));
+  if (n != null) b.append(el('span', 'n', String(n)));
+  b.onclick = onClick;
+
+  // Dragging conversations onto a folder files them.
+  if (onDropIds) {
+    b.addEventListener('dragover', (e) => {
+      if (!e.dataTransfer.types.includes('application/x-organizer-ids')) return;
+      e.preventDefault();
+      b.classList.add('drop-hot');
+    });
+    b.addEventListener('dragleave', () => b.classList.remove('drop-hot'));
+    b.addEventListener('drop', (e) => {
+      b.classList.remove('drop-hot');
+      const raw = e.dataTransfer.getData('application/x-organizer-ids');
+      if (!raw) return;
+      e.preventDefault();
+      onDropIds(JSON.parse(raw));
+    });
+  }
+  return b;
+}
+
+function renderNav() {
+  const body = $('#navbody');
+  body.textContent = '';
+  const c = counts();
+  const go = (kind, id = null) => () => { S.view = { kind, id }; S.sel.clear(); renderAll(); };
+
+  const top = el('div', 'sect');
+  top.append(
+    navItem({ ico: '◻', label: 'All', n: c.all, active: S.view.kind === 'all', onClick: go('all'),
+              onDropIds: (ids) => fileInto(ids, null) }),
+    navItem({ ico: '★', label: 'Starred', n: c.starred, active: S.view.kind === 'starred', onClick: go('starred'),
+              onDropIds: (ids) => setMeta(ids, { starred: true }).then(renderAll) }),
+    navItem({ ico: '⊘', label: 'Unfiled', n: c.untagged, active: S.view.kind === 'untagged', onClick: go('untagged') }),
+    navItem({ ico: '▤', label: 'Archived', n: c.archived, active: S.view.kind === 'archived', onClick: go('archived'),
+              onDropIds: (ids) => setMeta(ids, { archived: true }).then(renderAll) }),
+  );
+  body.append(top);
+
+  // --- folders ---------------------------------------------------------
+  const fs = el('div', 'sect');
+  const fh = el('h2', null, 'Folders');
+  const addF = el('button', 'add', '+');
+  addF.title = 'New folder';
+  addF.onclick = async (e) => {
+    e.stopPropagation();
+    const name = prompt('Folder name');
+    if (!name?.trim()) return;
+    const f = { id: uid(), name: name.trim(), parentId: null };
+    S.folders.push(f);
+    await STORE.put('folders', [f]);
+    renderAll();
+  };
+  fh.append(addF);
+  fs.append(fh);
+
+  const walk = (pid, depth) => {
+    for (const f of folderChildren(pid)) {
+      const item = navItem({
+        ico: '▸', label: f.name, n: c.folder.get(f.id) || 0,
+        active: S.view.kind === 'folder' && S.view.id === f.id,
+        onClick: go('folder', f.id),
+        onDropIds: (ids) => fileInto(ids, f.id),
+        title: 'Double-click to rename, shift-click to delete',
+      });
+      item.style.paddingLeft = `${8 + depth * 12}px`;
+      item.ondblclick = async () => {
+        const name = prompt('Rename folder', f.name);
+        if (!name?.trim()) return;
+        f.name = name.trim();
+        await STORE.put('folders', [f]);
+        renderAll();
+      };
+      item.addEventListener('click', async (e) => {
+        if (!e.shiftKey) return;
+        e.stopPropagation();
+        if (!confirm(`Delete folder "${f.name}"? Conversations in it stay in the library.`)) return;
+        const ids = S.convs.filter((x) => metaOf(x.id).folderId === f.id).map((x) => x.id);
+        await setMeta(ids, { folderId: null });
+        S.folders = S.folders.filter((x) => x.id !== f.id);
+        await STORE.del('folders', [f.id]);
+        if (S.view.kind === 'folder' && S.view.id === f.id) S.view = { kind: 'all', id: null };
+        renderAll();
+      }, true);
+      fs.append(item);
+      walk(f.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  if (!S.folders.length) fs.append(el('div', 'nav-empty', 'Drag conversations here, or import Claude chats to seed from Projects.'));
+  body.append(fs);
+
+  // --- saved searches --------------------------------------------------
+  const ss = el('div', 'sect');
+  const sh = el('h2', null, 'Saved searches');
+  const addS = el('button', 'add', '+');
+  addS.title = 'Save the current search and filters';
+  addS.onclick = async (e) => {
+    e.stopPropagation();
+    if (!S.query && !S.provider && S.view.kind === 'all') {
+      alert('Type a search or pick a filter first, then save it.');
+      return;
+    }
+    const name = prompt('Name this search', S.query || 'Saved search');
+    if (!name?.trim()) return;
+    const s = { id: uid(), name: name.trim(), q: { text: S.query, provider: S.provider, view: { ...S.view } } };
+    S.smart.push(s);
+    await STORE.put('smart', [s]);
+    renderAll();
+  };
+  sh.append(addS);
+  ss.append(sh);
+  for (const s of S.smart) {
+    const item = navItem({
+      ico: '⌕', label: s.name, active: false,
+      onClick: () => {
+        S.query = s.q.text || '';
+        S.provider = s.q.provider || null;
+        S.view = s.q.view || { kind: 'all', id: null };
+        $('#q').value = S.query;
+        S.sel.clear();
+        renderAll();
+      },
+      title: 'Shift-click to delete',
+    });
+    item.addEventListener('click', async (e) => {
+      if (!e.shiftKey) return;
+      e.stopPropagation();
+      S.smart = S.smart.filter((x) => x.id !== s.id);
+      await STORE.del('smart', [s.id]);
+      renderAll();
+    }, true);
+    ss.append(item);
+  }
+  if (!S.smart.length) ss.append(el('div', 'nav-empty', 'Search, then press + to keep it.'));
+  body.append(ss);
+
+  // --- tags ------------------------------------------------------------
+  if (c.tag.size) {
+    const ts = el('div', 'sect');
+    ts.append(el('h2', null, 'Tags'));
+    for (const [tag, n] of [...c.tag].sort((a, b) => b[1] - a[1])) {
+      ts.append(navItem({
+        ico: '#', label: tag, n,
+        active: S.view.kind === 'tag' && S.view.id === tag,
+        onClick: go('tag', tag),
+        onDropIds: (ids) => setMeta(ids, (m) => ({ tags: [...new Set([...m.tags, tag])] })).then(renderAll),
+      }));
+    }
+    body.append(ts);
+  }
+}
+
+async function fileInto(ids, folderId) {
+  await setMeta(ids, { folderId });
+  renderAll();
+}
+
+/* ------------------------------------------------------------------- list */
+
+const fmtDate = (iso) => {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return isNaN(d) ? '' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+};
+
+function scopeLabel() {
+  const v = S.view;
+  if (v.kind === 'folder') return S.folders.find((f) => f.id === v.id)?.name || 'Folder';
+  if (v.kind === 'tag') return `#${v.id}`;
+  return { all: 'All', starred: 'Starred', archived: 'Archived', untagged: 'Unfiled' }[v.kind] || 'All';
+}
+
+function renderList() {
+  const list = $('#list');
+  list.textContent = '';
+  const rows = shown();
+  $('#scope').textContent = `${scopeLabel()} · ${rows.length}`;
+  document.body.classList.toggle('selecting', S.sel.size > 0);
+
+  if (!S.convs.length) { list.append(el('div', 'empty', 'Nothing imported yet.')); renderBulk(); return; }
+  if (!rows.length) { list.append(el('div', 'empty', 'No conversations here.')); renderBulk(); return; }
+
+  for (const c of rows) {
+    const m = metaOf(c.id);
+    const row = el('div', 'row');
+    row.setAttribute('aria-current', String(c.id === S.openId));
+    row.draggable = true;
+    row.addEventListener('dragstart', (e) => {
+      // Dragging an unselected row drags just that one.
+      const ids = S.sel.has(c.id) ? [...S.sel] : [c.id];
+      e.dataTransfer.setData('application/x-organizer-ids', JSON.stringify(ids));
+      e.dataTransfer.effectAllowed = 'move';
+    });
+
+    const cb = el('input');
+    cb.type = 'checkbox';
+    cb.checked = S.sel.has(c.id);
+    cb.onclick = (e) => e.stopPropagation();
+    cb.onchange = () => {
+      if (cb.checked) S.sel.add(c.id); else S.sel.delete(c.id);
+      document.body.classList.toggle('selecting', S.sel.size > 0);
+      renderBulk();
+    };
+    row.append(cb);
+
+    const main = el('div', 'main');
+    main.append(el('div', 't', c.title || '(untitled)'));
+    const meta = el('div', 'm');
+    meta.append(el('span', `dot ${c.provider}`));
+    meta.append(el('span', null, fmtDate(c.updatedAt || c.createdAt)));
+    meta.append(el('span', null, '·'));
+    meta.append(el('span', null, `${c.messages.length} msg`));
+    if (m.starred) meta.append(el('span', null, '★'));
+    if (m.folderId) {
+      const f = S.folders.find((x) => x.id === m.folderId);
+      if (f) meta.append(el('span', 'tagchip', f.name));
+    }
+    for (const t of m.tags) meta.append(el('span', 'tagchip', `#${t}`));
+    main.append(meta);
+    const sn = snippet(c);
+    if (sn) { const d = el('div', 'snip'); d.innerHTML = sn; main.append(d); }
+    main.onclick = () => openConv(c.id);
+    row.append(main);
+    list.append(row);
+  }
+  renderBulk();
+}
+
+/* -------------------------------------------------------------- bulk bar */
+
+function renderBulk() {
+  const bar = $('#bulk');
+  bar.textContent = '';
+  bar.hidden = S.sel.size === 0;
+  if (!S.sel.size) return;
+  const ids = [...S.sel];
+
+  bar.append(el('span', 'cnt', `${ids.length} selected`));
+
+  const sel = el('select');
+  sel.append(new Option('Move to…', ''));
+  sel.append(new Option('— no folder —', '__none'));
+  for (const f of S.folders) sel.append(new Option(f.name, f.id));
+  sel.onchange = async () => {
+    if (!sel.value) return;
+    await fileInto(ids, sel.value === '__none' ? null : sel.value);
+  };
+  bar.append(sel);
+
+  const tag = el('button', null, 'Tag…');
+  tag.onclick = async () => {
+    const t = prompt('Add tag to ' + ids.length + ' conversation(s)');
+    if (!t?.trim()) return;
+    const name = t.trim().replace(/^#/, '');
+    await setMeta(ids, (m) => ({ tags: [...new Set([...m.tags, name])] }));
+    renderAll();
+  };
+  bar.append(tag);
+
+  const allStar = ids.every((i) => metaOf(i).starred);
+  const star = el('button', null, allStar ? 'Unstar' : 'Star');
+  star.onclick = async () => { await setMeta(ids, { starred: !allStar }); renderAll(); };
+  bar.append(star);
+
+  const allArch = ids.every((i) => metaOf(i).archived);
+  const arch = el('button', null, allArch ? 'Unarchive' : 'Archive');
+  arch.onclick = async () => { await setMeta(ids, { archived: !allArch }); S.sel.clear(); renderAll(); };
+  bar.append(arch);
+
+  const rm = el('button', 'danger', 'Remove');
+  rm.title = 'Remove from this library. The original chats are untouched.';
+  rm.onclick = async () => {
+    if (!confirm(`Remove ${ids.length} conversation(s) from this library?\n\n` +
+                 `The originals on Claude and ChatGPT are untouched, and you can re-import.`)) return;
+    await STORE.del('conversations', ids);
+    await STORE.del('meta', ids);
+    for (const i of ids) S.meta.delete(i);
+    if (ids.includes(S.openId)) S.openId = null;
+    S.sel.clear();
+    await load();
+  };
+  bar.append(rm);
+
+  const clear = el('button', null, 'Clear');
+  clear.onclick = () => { S.sel.clear(); renderAll(); };
+  bar.append(clear);
+}
+
+/* ----------------------------------------------------------------- thread */
+
+function renderBlock(b) {
+  switch (b.type) {
+    case 'text': { const d = el('div'); d.innerHTML = md(b.text); return d; }
+    case 'code': {
+      const pre = el('pre'); const code = el('code', null, b.text || '');
+      if (b.lang) code.dataset.lang = b.lang;
+      pre.append(code); return pre;
+    }
+    case 'thinking': {
+      const n = Array.isArray(b.summaries) ? b.summaries.length : 0;
+      const d = el('details', 'blk');
+      d.append(el('summary', null, n ? `Thought — ${n} step${n > 1 ? 's' : ''}` : 'Thought'));
+      const inner = el('div', 'inner');
+      if (n) { const ul = el('ul'); for (const s of b.summaries) ul.append(el('li', null, s)); inner.append(ul); }
+      if (b.text) { const t = el('div'); t.innerHTML = md(b.text); inner.append(t); }
+      d.append(inner); return d;
+    }
+    case 'tool_use': {
+      const d = el('details', 'blk');
+      d.append(el('summary', null, `Tool call — ${b.name || 'tool'}`));
+      const inner = el('div', 'inner'); const pre = el('pre');
+      pre.append(el('code', null, b.text || (b.input != null ? JSON.stringify(b.input, null, 2) : '')));
+      inner.append(pre); d.append(inner); return d;
+    }
+    case 'tool_result': {
+      const d = el('details', 'blk');
+      d.append(el('summary', null, b.isError ? 'Tool result — error'
+        : `Tool result${b.meta?.kind ? ` — ${b.meta.kind}` : ''}`));
+      const inner = el('div', 'inner'); const pre = el('pre');
+      pre.append(el('code', null, b.text || ''));
+      inner.append(pre); d.append(inner); return d;
+    }
+    case 'image':
+    case 'file': {
+      const label = b.type === 'image' ? 'Image' : 'File';
+      const name = b.filename ? ` · ${b.filename}` : '';
+      const dim = b.width && b.height ? ` · ${b.width}×${b.height}` : '';
+      return el('div', 'placeholder', `${label}${name}${dim} — not downloaded (attachments are captured as references)`);
+    }
+    case 'citation':
+      return el('div', 'placeholder', `Citation — ${b.title || b.url || ''}`);
+    default: {
+      const d = el('details', 'blk');
+      d.append(el('summary', null, `Unrecognised block — ${b.type}`));
+      const inner = el('div', 'inner'); const pre = el('pre');
+      pre.append(el('code', null, JSON.stringify(b, null, 2)));
+      inner.append(pre); d.append(inner); return d;
+    }
+  }
+}
+
+function renderThread() {
+  const main = $('#main');
+  main.textContent = '';
+  const conv = S.convs.find((c) => c.id === S.openId);
+
+  if (!conv) {
+    const w = el('div', 'welcome');
+    w.innerHTML = S.convs.length
+      ? '<h2>Pick a conversation</h2><p>Search runs across every message, not just titles. Drag conversations onto a folder to file them.</p>'
+      : `<h2>Import your chats</h2>
+         <p>Nothing is uploaded anywhere. Everything stays in this browser.</p>
+         <ol>
+           <li>Load <code>extension/</code> unpacked in Chrome and click its icon, or paste
+               <code>tools/dist/export.js</code> into the console on claude.ai / chatgpt.com.</li>
+           <li>Pick the conversations you want and export.</li>
+           <li>Drop the downloaded file into the panel on the left.</li>
+         </ol>`;
+    main.append(w);
+    return;
+  }
+
+  const m = metaOf(conv.id);
+  const { path, kids, rootCount } = mainPath(conv);
+  const wrap = el('div', 'thread');
+
+  const back = el('button', 'icon-btn back', '← all conversations');
+  back.onclick = () => document.body.classList.remove('reading');
+  wrap.append(back);
+
+  const head = el('div', 'thread-head');
+  head.append(el('h2', null, conv.title || '(untitled)'));
+  const meta = el('div', 'meta');
+  meta.append(el('span', `dot ${conv.provider}`));
+  meta.append(el('span', null, conv.provider));
+  if (conv.model) { meta.append(el('span', null, '·')); meta.append(el('span', null, conv.model)); }
+  meta.append(el('span', null, '·'));
+  meta.append(el('span', null, fmtDate(conv.createdAt)));
+  meta.append(el('span', null, '·'));
+  meta.append(el('span', null, `${path.length} of ${conv.messages.length} messages on this path`));
+  if (conv.sourceUrl) {
+    const a = el('a', null, 'open original ↗');
+    a.href = conv.sourceUrl; a.target = '_blank'; a.rel = 'noopener noreferrer';
+    meta.append(el('span', null, '·')); meta.append(a);
+  }
+  head.append(meta);
+
+  const tools = el('div', 'thread-tools');
+  const star = el('button', 'icon-btn', m.starred ? '★ Starred' : '☆ Star');
+  star.onclick = async () => { await setMeta([conv.id], { starred: !m.starred }); renderAll(); };
+  tools.append(star);
+
+  const fsel = el('select');
+  fsel.style.cssText = 'border:1px solid var(--line);background:var(--bg-raise);border-radius:999px;padding:3px 8px;font-size:12px';
+  fsel.append(new Option('— no folder —', '__none', false, !m.folderId));
+  for (const f of S.folders) fsel.append(new Option(f.name, f.id, false, m.folderId === f.id));
+  fsel.onchange = () => fileInto([conv.id], fsel.value === '__none' ? null : fsel.value);
+  tools.append(fsel);
+
+  for (const t of m.tags) {
+    const chip = el('span', 'tagchip', `#${t} ×`);
+    chip.title = 'Remove tag';
+    chip.onclick = async () => {
+      await setMeta([conv.id], (mm) => ({ tags: mm.tags.filter((x) => x !== t) }));
+      renderAll();
+    };
+    tools.append(chip);
+  }
+  const addTag = el('button', 'icon-btn', '+ tag');
+  addTag.onclick = async () => {
+    const t = prompt('Add tag');
+    if (!t?.trim()) return;
+    await setMeta([conv.id], (mm) => ({ tags: [...new Set([...mm.tags, t.trim().replace(/^#/, '')])] }));
+    renderAll();
+  };
+  tools.append(addTag);
+  head.append(tools);
+  wrap.append(head);
+
+  if (rootCount > 1) {
+    wrap.append(el('div', 'banner',
+      `This conversation has ${rootCount} separate roots — showing the first. ` +
+      `That usually means branching, or messages whose parent was not captured.`));
+  }
+
+  for (const msg of path) {
+    const box = el('div', `msg ${msg.role}`);
+    const who = el('div', 'who');
+    who.append(el('span', null, msg.role === 'user' ? 'You' : msg.role));
+    if (msg.model) who.append(el('span', 'tagline', msg.model));
+    if (msg.status && msg.status !== 'complete') who.append(el('span', 'tagline', msg.status));
+
+    const sibs = kids.get(msg.parentId) || [];
+    if (sibs.length > 1) {
+      const idx = sibs.findIndex((s) => s.id === msg.id);
+      const br = el('div', 'branch');
+      br.append(el('span', null, `branch ${idx + 1}/${sibs.length}`));
+      const goB = (d) => {
+        S.branchPick.set(msg.parentId, sibs[(idx + d + sibs.length) % sibs.length].id);
+        renderThread();
+      };
+      const prev = el('button', null, '‹'); prev.onclick = () => goB(-1);
+      const next = el('button', null, '›'); next.onclick = () => goB(1);
+      br.append(prev, next);
+      who.append(br);
+    }
+    box.append(who);
+
+    const body = el('div', 'body');
+    for (const b of msg.content) body.append(renderBlock(b));
+    box.append(body);
+    wrap.append(box);
+  }
+
+  main.append(wrap);
+  main.scrollTop = 0;
+}
+
+/* ------------------------------------------------------------------- misc */
+
+function renderFilters() {
+  const f = $('#filters');
+  f.textContent = '';
+  if (S.providers.size < 2) return;
+  const mk = (label, val) => {
+    const b = el('button', 'chip', label);
+    b.setAttribute('aria-pressed', String(S.provider === val));
+    b.onclick = () => { S.provider = S.provider === val ? null : val; renderAll(); };
+    return b;
+  };
+  f.append(mk('all', null));
+  for (const p of [...S.providers].sort()) f.append(mk(p, p));
+}
+
+function openConv(id) {
+  S.openId = id;
+  S.branchPick.clear();
+  document.body.classList.add('reading');
+  renderList();
+  renderThread();
+}
+
+function toast(msg) {
+  const t = el('div', 'banner', msg);
+  Object.assign(t.style, {
+    position: 'fixed', bottom: '18px', left: '50%', transform: 'translateX(-50%)',
+    zIndex: 30, boxShadow: '0 4px 20px rgba(0,0,0,.14)',
+  });
+  document.body.append(t);
+  setTimeout(() => t.remove(), 2800);
+}
+
+function renderAll() { renderNav(); renderFilters(); renderList(); renderThread(); }
+
+/* ------------------------------------------------------------------- boot */
+
+async function load() {
+  const [convs, meta, folders, smart] = await Promise.all(
+    STORES.map((s) => STORE.all(s)));
+  S.convs = convs.sort((a, b) =>
+    String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
+  S.meta = new Map(meta.map((m) => [m.convId, { tags: [], ...m }]));
+  S.folders = folders;
+  S.smart = smart;
+  reindex();
+  renderAll();
+}
+
+/**
+ * KaTeX is optional and local-only. If `npm run math` vendored it, use it;
+ * otherwise maths falls back to monospace source. These are same-origin files
+ * that may simply not exist — the app never reaches the network.
+ */
+async function loadMath() {
+  const add = (tag, attrs) => new Promise((res) => {
+    const n = Object.assign(document.createElement(tag), attrs);
+    n.onload = () => res(true);
+    n.onerror = () => { n.remove(); res(false); };
+    document.head.append(n);
+  });
+  if (!await add('link', { rel: 'stylesheet', href: 'vendor/katex/katex.min.css' })) return false;
+  return add('script', { src: 'vendor/katex/katex.min.js' });
+}
+
+function wire() {
+  $('#q').addEventListener('input', (e) => {
+    S.query = e.target.value.trim().toLowerCase();
+    renderList();
+  });
+
+  $('#file').addEventListener('change', (e) => {
+    importFiles([...e.target.files]);
+    e.target.value = '';
+  });
+
+  const drop = $('#drop');
+  document.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault();
+    drop.classList.add('hot');
+  });
+  document.addEventListener('dragleave', (e) => { if (e.target === document) drop.classList.remove('hot'); });
+  document.addEventListener('drop', (e) => {
+    const files = [...(e.dataTransfer?.files || [])].filter((f) => /\.json$/i.test(f.name));
+    drop.classList.remove('hot');
+    if (!files.length) return;
+    e.preventDefault();
+    importFiles(files);
+  });
+
+  $('#navToggle').onclick = () => document.body.classList.toggle('shownav');
+
+  $('#wipe').onclick = async () => {
+    if (!S.convs.length) return;
+    if (!confirm(`Remove all ${S.convs.length} conversations, folders and tags from this browser?\n\n` +
+                 `The originals on Claude and ChatGPT are untouched.`)) return;
+    await STORE.clearAll();
+    S.openId = null;
+    S.meta.clear();
+    await load();
+  };
+
+  $('#theme').onclick = () => {
+    const cur = document.documentElement.getAttribute('data-theme');
+    const next = cur === 'dark' ? 'light' : cur === 'light' ? '' : 'dark';
+    if (next) document.documentElement.setAttribute('data-theme', next);
+    else document.documentElement.removeAttribute('data-theme');
+    try { localStorage.setItem('organizer.theme', next); } catch {}
+  };
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); }
+    if (e.key === 'Escape') {
+      $('#q').blur();
+      document.body.classList.remove('reading');
+      if (S.sel.size) { S.sel.clear(); renderAll(); }
+    }
+  });
+
+  try {
+    const t = localStorage.getItem('organizer.theme');
+    if (t) document.documentElement.setAttribute('data-theme', t);
+  } catch {}
+}
+
+wire();
+await loadMath();
+await STORE.open();
+
+if (STORE.ephemeral) {
+  const b = el('div', 'banner');
+  b.style.margin = '10px 12px 0';
+  b.innerHTML = location.protocol === 'file:' || location.origin === 'null'
+    ? '<b>Nothing will be saved.</b> Browsers block storage for files opened directly. ' +
+      'Run <code>npm start</code> and use the localhost address instead — same app, but it remembers.'
+    : `<b>Nothing will be saved.</b> Storage is unavailable (${esc(STORE.reason || 'unknown')}).`;
+  $('#side').insertBefore(b, $('#list'));
+}
+
+await load();

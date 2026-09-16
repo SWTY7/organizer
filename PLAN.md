@@ -335,7 +335,7 @@ your existing history in once.
 sync, emitting `.chat`/`.chatpack`. This is the phase that fixes the friction you
 raised, and it lands early now rather than last.
 
-**Phase 3 — organizer.** Folders, tags, smart folders, pin/archive, bulk actions,
+**Phase 3 — organizer. ✅ Done.** Folders, tags, saved searches, archive, bulk actions,
 drag and drop.
 
 **Phase 4 — annotation.** Notes, highlights, snippet library, overlay edits.

@@ -23,8 +23,21 @@ click away and an export of a few hundred conversations takes minutes.
 
 1. **Load conversations** on Claude, ChatGPT, or both. You need to be signed in
    to that site in this browser already; the extension uses that session.
-2. Tick what you want. Filter by title, **select all / none / invert**, or check
-   **only new & updated** to see just what has changed since your last capture.
+2. Tick what you want. Filter by title, **select all / none / invert**, check
+   **only new & updated** to see what has changed since your last capture, or
+   **group** the list and take a whole group at once.
+
+   Grouping uses only what the provider's conversation list already returns, so
+   it costs no extra requests:
+
+   | Group by | Claude | ChatGPT |
+   |---|---|---|
+   | project | yes — real Projects | custom GPT, when one was used |
+   | model | yes | **no** — model is detail-only, so these land in one bucket |
+   | month | yes | yes |
+   | provider | yes | yes |
+
+   Starred is available on both and has its own filter.
 3. **Export selected** → a `.chatpack.json` downloads.
 4. Drop it into the reader at `localhost:4173`.
 

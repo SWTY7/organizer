@@ -69,6 +69,18 @@
   }
   .linkbtn { background: none; border: 0; color: var(--accent); font-size: 13px; padding: 4px 2px; text-decoration: underline; }
   .muted { color: var(--fg-faint); font-size: 12.5px; }
+  select {
+    border: 1px solid var(--line); background: var(--bg-raise); color: var(--fg);
+    border-radius: 6px; padding: 4px 6px; font-size: 13px;
+  }
+
+  .group {
+    display: flex; align-items: center; gap: 8px; margin: 14px 0 2px;
+    padding: 4px 8px; background: var(--bg-sub); border-radius: 6px;
+  }
+  .group .gname { font-size: 12.5px; font-weight: 600; letter-spacing: 0.01em; }
+  .group .gcount { font-size: 11.5px; color: var(--fg-faint); }
+  .group .linkbtn { margin-left: auto; font-size: 12px; }
 
   label.check { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--fg-dim); white-space: nowrap; }
 
@@ -119,10 +131,20 @@
 
   <div class="toolbar">
     <input id="filter" type="search" placeholder="Filter by title…" autocomplete="off">
+    <label class="check">group
+      <select id="groupBy">
+        <option value="none">flat</option>
+        <option value="project">by project</option>
+        <option value="model">by model</option>
+        <option value="month">by month</option>
+        <option value="provider">by provider</option>
+      </select>
+    </label>
     <button class="linkbtn" id="selAll">select all</button>
     <button class="linkbtn" id="selNone">none</button>
     <button class="linkbtn" id="selInvert">invert</button>
     <label class="check"><input type="checkbox" id="onlyNew"> only new &amp; updated</label>
+    <label class="check"><input type="checkbox" id="onlyStar"> starred</label>
     <span class="muted" id="shown"></span>
   </div>
 

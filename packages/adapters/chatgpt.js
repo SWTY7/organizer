@@ -102,6 +102,15 @@ export const chatgpt = {
       id: c.id,
       title: c.title,
       updatedAt: c.update_time,
+      facets: {
+        // ChatGPT's list has no model — default_model_slug only appears in the
+        // conversation detail, so grouping by model needs a fetch it does not
+        // justify. A custom GPT is the nearest thing the list does expose.
+        project: c.gizmo_id ? `GPT ${c.gizmo_id.slice(0, 12)}` : null,
+        model: null,
+        starred: !!c.is_starred,
+        archived: !!c.is_archived,
+      },
       _raw: c,
     }));
   },
