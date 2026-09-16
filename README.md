@@ -89,8 +89,14 @@ That vendors KaTeX locally. The app itself never touches the network.
 - [x] **1 — format + reader.** `.chat` parser, import, browse, full-text search.
 - [x] **2 — capturer.** One-click capture with a selection list, and delta sync.
 - [x] **3 — organizer.** Folders, tags, saved searches, bulk actions, drag-to-file.
-- [ ] **4 — annotation.** Notes, highlights, snippet library, overlay edits.
-- [ ] **5 — power.** Semantic search, compile snippets, more providers.
+- [ ] **4 — reading.** Nested folders, then outline / map / spine / columns / 2D
+      branches — [`READING.md`](READING.md).
+- [ ] **0b — asset probe.** Are uploaded files retrievable? Read-only, 20 minutes.
+- [ ] **5 — assets.** Images and attachments captured for real; sandboxed SVG and
+      HTML; artifacts reconstructed.
+- [ ] **6 — notes and links.** Notes as documents, `[[links]]`, backlinks, highlights.
+- [ ] **7 — graph.** Conversations, folders, tags and notes as a map you can fly around.
+- [ ] **8 — power.** Semantic search, compile snippets, more providers.
 
 ## A note on capture
 

@@ -338,10 +338,28 @@ raised, and it lands early now rather than last.
 **Phase 3 — organizer. ✅ Done.** Folders, tags, saved searches, archive, bulk actions,
 drag and drop.
 
-**Phase 4 — annotation.** Notes, highlights, snippet library, overlay edits.
+**Phase 4 — reading.** Alternative ways to read one conversation: outline, map
+ribbon, spine, columns, 2D branches, gallery, digest. Nested folders land here
+too, because everything else starts displaying folder paths. Design:
+[`READING.md`](READING.md).
 
-**Phase 5 — power.** Semantic search, compile snippets to Markdown/PDF, library
-stats, workspace sync, Gemini and other providers as new capturers.
+**Phase 0b — asset probe.** Twenty minutes, read-only. Answers whether uploaded
+files are retrievable and whether Claude already hands us extracted document
+text. Runs before the format is bumped, not after.
+
+**Phase 5 — assets.** `.chatpack.zip`, capture-time attachment fetch with size
+caps, blobs in IndexedDB, sandboxed SVG/HTML rendering, artifact
+reconstruction. §12.3.
+
+**Phase 6 — notes and links.** The old Phase 4, done wiki-style: notes as
+first-class documents, `[[links]]`, backlinks, message-anchored highlights,
+snippet library. §12.1.
+
+**Phase 7 — graph.** Canvas force layout over conversations, folders, tags and
+notes. §12.2.
+
+**Phase 8 — power.** Semantic search, compile to Markdown/PDF, library stats,
+workspace sync, Gemini and other providers as new capturers.
 
 ## 11. Risks
 
@@ -364,3 +382,142 @@ stats, workspace sync, Gemini and other providers as new capturers.
   capturer, where the live page can supply real structure.
 - **Cross-device sync** — workspace file first, real sync only if it becomes a
   genuine irritation.
+
+## 12. Track B — the wiki turn
+
+Obsidian's shape: a nested folder tree, documents that link to each other, and a
+graph you can fly around. Worth taking, with one correction and one addition.
+
+### 12.1 Links before graph
+
+**A graph needs edges, and an imported archive has none.** Obsidian's graph
+works because a human wrote every `[[link]]` in it. Import 285 conversations and
+you get 285 unconnected dots — a picture that looks broken and teaches you
+nothing. So the edges have to come from somewhere other than manual linking, at
+least at the start.
+
+| edge | source | cost | quality |
+|---|---|---|---|
+| conversation → folder | your filing, or Claude Projects | free | exact |
+| conversation → tag | your tags | free | exact |
+| conversation ↔ conversation, shared tag or folder | derived | free | weak, but dense |
+| conversation ↔ conversation, similar | tf-idf cosine | cheap | surprisingly good |
+| message → message, quoted | substring match over a length floor | cheap | precise when it fires |
+| note → anything | `[[wikilink]]` you wrote | manual | strongest |
+
+The similarity index is the load-bearing piece and it is small: tokenize title
+plus **user** messages only (assistant messages are long and dilute the signal),
+drop stopwords, tf-idf, cosine, keep the top five above a threshold. 285² sparse
+comparisons is milliseconds. Cache it keyed by a content hash.
+
+It pays for three features at once: graph edges, a **related conversations**
+panel in the reader — probably more useful day to day than the graph itself —
+and the "semantic search" already promised in Phase 8.
+
+**Notes** become the linkable document type: a real note, stored alongside
+conversations, with `[[links]]` to conversations, to a specific message via
+`stableKey`, to tags, and to other notes. Backlinks pane on everything.
+Unresolved links become stubs you can fill in later, exactly as Obsidian does.
+This is why annotation and the wiki are the same phase rather than two.
+
+### 12.2 The graph itself
+
+Canvas, force-directed, zero dependencies. Node types conversation / folder /
+tag / note, edge types from the table above, each toggleable with a legend, so
+you can look at just your explicit links or just the derived similarity.
+
+Under about a thousand nodes a naive O(n²) repulsion runs fine; beyond that,
+bucket into a spatial grid. Messages are deliberately **not** nodes by default —
+that is tens of thousands and the picture turns to soup. Drill into a single
+conversation's tree as a separate, local graph instead.
+
+Honest framing: a graph is for *exploring*, not for *finding*. The list stays
+the primary surface and the graph is a view you visit.
+
+### 12.3 Images, SVG, and interactive things
+
+Three different problems wearing one coat.
+
+**Bitmaps the provider hosts** — uploads, generated images. We hold references,
+not bytes (Phase 0). Only the extension can fetch them, because only it has the
+session and the origin. So: fetch at capture time, opt-in, with a size cap and a
+running total shown before you export. Store as `Blob` in IndexedDB — structured
+clone handles blobs natively, so no base64 and no 33% tax — and render through
+`URL.createObjectURL`. Transport becomes `.chatpack.zip`; a store-only zip
+writer is about 120 lines, and `DecompressionStream('deflate-raw')` reads
+compressed entries with no library. The reader keeps accepting bare `.json`
+forever. `SPEC.md` already reserves `blobHash` for this; the slot just gets
+filled.
+
+Size honesty: a few hundred images at 300 KB each is ~100 MB. Default to
+skipping anything over a couple of MB, and make it re-runnable per conversation
+rather than all-or-nothing.
+
+**SVG and HTML the model wrote** are not a fetching problem at all — that text
+is already in the transcript, sitting in a code block. It is purely a *rendering
+safety* problem. The reader's current invariant is that every provider string is
+escaped before it reaches `innerHTML`; rendering markup is the first deliberate
+breach of it. So it happens in exactly one place: an `<iframe sandbox="">` with
+`srcdoc` and a `default-src 'none'` CSP — no scripts, no network, no reach into
+the parent — behind a click-to-render gate with a source toggle. That covers SVG
+diagrams, HTML tables and standalone pages.
+
+**Genuinely interactive artifacts** — React components, little apps — need a JSX
+transform and a runtime, and running model-authored JavaScript is a security
+decision rather than a rendering one. The line: do not run them by default. Do
+**reconstruct** them, which is the part that actually matters and is missing
+today. A Claude artifact arrives as a sequence of `tool_use` create / update /
+rewrite commands scattered through the conversation; replaying them yields the
+final document, which the reader currently cannot show at all. Present that as a
+file with syntax highlighting and a copy button, render the plain HTML and SVG
+ones in the sandbox, and offer "run this one, with scripts" as an explicit
+per-artifact opt-in behind a warning.
+
+Mermaid would be another vendored megabyte. Deferred, not forgotten.
+
+### 12.4 Input files — can we get them?
+
+Probably yes, and one of them may already be in hand. Phase 0 established that
+both providers give references rather than bytes:
+
+| | what the message carries |
+|---|---|
+| Claude | `files[]` — `file_uuid`, `preview_url`, `thumbnail_url` |
+| ChatGPT | `metadata.attachments[]` — `id`, `name`, `mime_type`, `size`, `library_file_id`; plus `asset_pointer` in content |
+
+Three questions remain open, and Phase 0b answers all of them read-only:
+
+1. Does Claude's `preview_url` serve the **original** bytes to a cookied
+   request, or only a downsized preview? Is there a full-file endpoint?
+2. Does a Claude message also carry `attachments[]` with **`extracted_content`** —
+   the plain text of an uploaded document? If it does, then document text is
+   already arriving in every payload and the adapter is discarding it, because
+   it reads `files` and nothing else. That would be the cheapest win available:
+   no fetch, no bytes, and uploaded PDFs and source files become full-text
+   searchable.
+3. Does ChatGPT expose a download endpoint for a file id, and is the URL it
+   returns usable from the extension?
+
+One hard limit regardless of the answers: **signed asset URLs expire and
+providers eventually drop old uploads.** Anything not captured while it is still
+there is gone for good. That is an argument for doing the asset work sooner
+rather than later, and it is the reason Phase 0b jumps the queue.
+
+### 12.5 Nested folders
+
+The data model already has `parentId` and the tree already renders with
+indentation. What is missing is everything around it: creating a folder *inside*
+another, dragging a folder onto a folder, a cycle guard, collapse state that
+persists, breadcrumbs in the thread header, and folder paths rather than bare
+names in the two "move to" pickers.
+
+Two things break the moment nesting is real, and get fixed with it:
+
+- **Counts and filtering match a folder exactly**, so a parent would show 0 and
+  filter to nothing. Needs a subtree walk, plus an "include subfolders" toggle.
+- **Deleting a folder orphans its children** — they keep pointing at a dead id,
+  vanish from the tree because nothing walks to them, and stay in the store
+  invisibly. Children must be reparented to the grandparent, or deleted with an
+  explicit confirmation.
+
+Small work, so it goes at the front of Phase 4.
