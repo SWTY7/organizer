@@ -30,3 +30,6 @@ Thumbs.db
 
 # …but committed fixtures are synthetic and safe
 !fixtures/*.json
+
+# Vendored third-party assets fetched by npm run math
+app/vendor/

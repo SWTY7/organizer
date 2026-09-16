@@ -162,8 +162,12 @@
   .body th { background: var(--bg-sub); font-weight: 600; }
   .body a { color: var(--accent); }
   .body hr { border: 0; border-top: 1px solid var(--line); margin: 1.4em 0; }
+  /* Fallback when KaTeX is not vendored: show the source, legibly. */
   .math { font-family: var(--mono); font-size: 0.9em; background: var(--bg-sub);
           padding: 0.1em 0.3em; border-radius: 4px; color: var(--fg-dim); }
+  .math.block { display: block; padding: 10px 12px; margin: 0 0 0.85em; overflow-x: auto; }
+  .katex-display { overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  .body .katex { font-size: 1.05em; }
 
   /* collapsible blocks */
   details.blk { margin: 0 0 0.85em; border: 1px solid var(--line-soft); border-radius: var(--radius); background: var(--bg-sub); }
@@ -412,25 +416,48 @@ function snippet(c) {
  * Everything is escaped before any markup is inserted — content is the user's
  * own, but it is still untrusted input to this page.
  */
+/**
+ * Typeset TeX if KaTeX was vendored (npm run math), else show the source in
+ * monospace. Never throws — a malformed expression shows as source rather than
+ * taking the message down with it.
+ */
+function renderMath(tex, display) {
+  if (typeof katex !== 'undefined') {
+    try {
+      return katex.renderToString(tex, { displayMode: display, throwOnError: false, output: 'html' });
+    } catch { /* fall through to source */ }
+  }
+  return `<span class="math${display ? ' block' : ''}">${esc(tex)}</span>`;
+}
+
+/**
+ * `$…$` is ambiguous with currency. Reject the shape that actually collides:
+ * a number followed by a space and a word, as in "$30, the ratio is 5".
+ * "$2x + 1$" survives because `2x` is not a bare number.
+ */
+const looksLikeMoney = (t) => /^\d[\d,]*(\.\d+)?\s+\w/.test(t);
+
 function md(src) {
-  const fences = [];
+  // Slots hold content that must survive escaping and inline formatting
+  // untouched: code, and TeX that KaTeX needs in its raw form.
+  const slots = [];
+  const slot = (html) => ` S${slots.push(html) - 1} `;
   let s = String(src ?? '').replace(/\r\n/g, '\n');
 
-  // Pull fenced code out first so nothing else mangles it.
-  s = s.replace(/```([\w+-]*)\n?([\s\S]*?)```/g, (_, lang, code) => {
-    fences.push(`<pre><code data-lang="${esc(lang)}">${esc(code.replace(/\n$/, ''))}</code></pre>`);
-    return ` F${fences.length - 1} `;
-  });
+  // Order matters. Fences first, then inline code, then maths — so a `$5`
+  // inside backticks stays currency rather than becoming an equation.
+  s = s.replace(/```([\w+-]*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+    slot(`<pre><code data-lang="${esc(lang)}">${esc(code.replace(/\n$/, ''))}</code></pre>`));
+  s = s.replace(/`([^`\n]+)`/g, (_, c) => slot(`<code>${esc(c)}</code>`));
+  s = s.replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => slot(renderMath(m.trim(), true)));
+  s = s.replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => slot(renderMath(m.trim(), true)));
+  s = s.replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => slot(renderMath(m.trim(), false)));
+  s = s.replace(/\$([^$\n]+)\$/g, (whole, m) =>
+    looksLikeMoney(m) ? whole : slot(renderMath(m, false)));
 
   s = esc(s);
 
   const inline = (t) => t
-    .replace(/`([^`\n]+)`/g, (_, c) => `<code>${c}</code>`)
-    // Display math stays legible as monospace rather than rendering wrong.
-    .replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => `<span class="math">${m.trim()}</span>`)
-    .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `<span class="math">${m.trim()}</span>`)
-    .replace(/\$([^$\n]+)\$/g, (_, m) => `<span class="math">${m}</span>`)
-    .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => `<span class="math">${m}</span>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|\W)\*([^*\n]+)\*/g, '$1<em>$2</em>')
     .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
@@ -460,7 +487,8 @@ function md(src) {
       flushTable();
     }
     if (!t) { flushAll(); continue; }
-    if (/^ F\d+ $/.test(t)) { flushAll(); out.push(fences[+t.slice(2, -1)]); continue; }
+    // A slot alone on its line is a block: a fence, or display maths.
+    if (/^ S\d+ $/.test(t)) { flushAll(); out.push(slots[+t.slice(2, -1)]); continue; }
 
     const h = t.match(/^(#{1,6})\s+(.*)$/);
     if (h) { flushAll(); out.push(`<h${Math.min(h[1].length, 3)}>${inline(h[2])}</h${Math.min(h[1].length, 3)}>`); continue; }
@@ -487,7 +515,8 @@ function md(src) {
     para.push(t);
   }
   flushAll();
-  return out.join('\n');
+  // Put the untouched code and maths back now that formatting is done.
+  return out.join('\n').replace(/ S(\d+) /g, (_, i) => slots[+i]);
 }
 
 /* ------------------------------------------------------------ thread path */
@@ -830,8 +859,26 @@ function wire() {
   } catch {}
 }
 
+/**
+ * KaTeX is optional and local-only. If `npm run math` has vendored it, use it;
+ * otherwise maths renders as monospace source. The app never reaches the
+ * network — these are same-origin files that may simply not exist.
+ */
+async function loadMath() {
+  const add = (tag, attrs) => new Promise((res) => {
+    const n = Object.assign(document.createElement(tag), attrs);
+    n.onload = () => res(true);
+    n.onerror = () => { n.remove(); res(false); };
+    document.head.append(n);
+  });
+  const ok = await add('link', { rel: 'stylesheet', href: 'vendor/katex/katex.min.css' });
+  if (!ok) return false;
+  return add('script', { src: 'vendor/katex/katex.min.js' });
+}
+
 (async () => {
   wire();
+  await loadMath();
   await STORE.open();
 
   if (STORE.ephemeral) {

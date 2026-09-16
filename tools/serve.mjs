@@ -32,7 +32,14 @@ const TYPES = {
 const server = createServer(async (req, res) => {
   try {
     let path = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-    if (path === '/') path = '/app/index.html';
+
+    // Redirect rather than serving the app at "/": relative URLs in the page
+    // (vendor/katex/…) must resolve against /app/, not the project root.
+    if (path === '/') {
+      res.writeHead(302, { location: '/app/' }).end();
+      return;
+    }
+    if (path.endsWith('/')) path += 'index.html';
 
     // Refuse anything that escapes the project root.
     const full = join(ROOT, normalize(path));

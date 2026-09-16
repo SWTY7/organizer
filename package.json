@@ -11,7 +11,8 @@
     "start": "node tools/serve.mjs",
     "build": "node tools/build.mjs",
     "test": "node --test \"packages/**/*.test.mjs\"",
-    "check": "npm run test && npm run build"
+    "check": "npm run test && npm run build",
+    "math": "node tools/fetch-katex.mjs"
   },
   "license": "MIT"
 }

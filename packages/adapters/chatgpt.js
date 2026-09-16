@@ -10,6 +10,63 @@ import {
   makeHttp, summarize, sleep, RATE_MS,
 } from './shared.js';
 
+/**
+ * ChatGPT content types that are internal plumbing rather than conversation.
+ * Its own UI never shows these as prose; rendering them as prose dumps raw
+ * tool scaffolding into the transcript.
+ */
+const INTERNAL_TYPES = new Set([
+  'tether_browsing_display',
+  'tether_browsing_code',
+  'tether_quote',
+  'sonic_webpage',
+  'system_error',
+  'user_editable_context',
+  'model_editable_context',
+]);
+
+/**
+ * Strip ChatGPT's inline markers.
+ *
+ * Citations and media directives are delimited by private-use characters
+ * (U+E200 start, U+E202 separator, U+E201 end) that are invisible but carry
+ * payloads like `cite turn0search2` or `filecite turn0file0L5-L8`. The web UI
+ * consumes them and renders footnotes; anything else shows the raw payload
+ * glued into the sentence.
+ *
+ * This is transport markup, not content, so it is removed at capture time.
+ * `url` markers are the exception — they carry a real title and href, so they
+ * become ordinary Markdown links instead of being dropped.
+ */
+export function stripChatgptMarkup(s) {
+  if (typeof s !== 'string' || !s) return s;
+  return s
+    .replace(/([\s\S]*?)/g, (_, inner) => {
+      const parts = inner.split(/[]/).filter(Boolean);
+      const kind = (parts[0] || '').trim();
+      if (kind === 'url' && parts.length >= 2) {
+        const href = parts.find((p) => /^https?:\/\//.test(p.trim()));
+        const title = parts.slice(1).find((p) => !/^https?:\/\//.test(p.trim()));
+        if (href) return `[${(title || href).trim()}](${href.trim()})`;
+      }
+      return ''; // cite, filecite, video, navlist, image_group, …
+    })
+    // Any stray delimiters, plus marker payloads that arrived unwrapped.
+    .replace(/[-]/g, '')
+    .replace(/\b(?:file)?cite(?:turn\d+\w+?\d+(?:L\d+(?:-L\d+)?)?)+/g, '')
+    .replace(/\bturn\d+(?:search|file|view|news|image|youtube|video)\d+(?:L\d+(?:-L\d+)?)?/g, '')
+    // Line-level directives the UI renders as widgets. Remove the whole line,
+    // newline included, so they leave no gap behind.
+    .replace(/^[ \t]*image_group\{[\s\S]*?\}[ \t]*\n?/gm, '')
+    .replace(/^[ \t]*navlist\b.*\n?/gm, '')
+    // ::: fences wrap a real document; keep the contents, drop the fence.
+    .replace(/^[ \t]*:::\w+\{[^\n}]*\}[ \t]*\n?/gm, '')
+    .replace(/^[ \t]*:::[ \t]*\n?/gm, '')
+    .replace(/[ \t]+$/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export const chatgpt = {
   id: 'chatgpt',
   label: 'ChatGPT',
@@ -72,16 +129,38 @@ export const chatgpt = {
     if (!c) return [];
     const recipient = msg.recipient || 'all';
     const isToolCall = recipient !== 'all';
+    const clean = stripChatgptMarkup;
+
+    // Internal plumbing: keep whatever payload it carries as a tool result so
+    // nothing is lost, but never as prose. Empty ones are pure UI scaffolding.
+    if (INTERNAL_TYPES.has(c.content_type)) {
+      const text = clean(c.result || c.summary || c.text || c.content || '');
+      return text ? [{ type: 'tool_result', text, meta: { kind: c.content_type } }] : [];
+    }
+
+    // A tool-role message's text IS a tool result, whatever content_type it
+    // claims. ChatGPT emits file-search dumps and citation instructions this
+    // way, which read as gibberish if rendered as conversation.
+    if (msg.author?.role === 'tool' && c.content_type === 'text') {
+      const text = clean((c.parts || []).filter((p) => typeof p === 'string').join('\n'));
+      return text
+        ? [{ type: 'tool_result', text, meta: { kind: msg.author.name || 'tool' } }]
+        : [];
+    }
 
     switch (c.content_type) {
       case 'text':
         return (c.parts || [])
           .filter((p) => typeof p === 'string' && p.length)
-          .map((p) => ({ type: 'text', text: p }));
+          .map((p) => ({ type: 'text', text: clean(p) }))
+          .filter((b) => b.text);
 
       case 'multimodal_text':
         return (c.parts || []).flatMap((p) => {
-          if (typeof p === 'string') return p.length ? [{ type: 'text', text: p }] : [];
+          if (typeof p === 'string') {
+            const t = clean(p);
+            return t ? [{ type: 'text', text: t }] : [];
+          }
           if (p && p.content_type === 'image_asset_pointer') {
             return [{
               type: 'image',
@@ -103,16 +182,18 @@ export const chatgpt = {
         return [{ type: 'tool_result', text: c.text || '' }];
 
       case 'thoughts': {
-        const summaries = (c.thoughts || []).map((t) => t.summary).filter(Boolean);
-        const text = (c.thoughts || []).map((t) => t.content).filter(Boolean).join('\n\n');
+        const summaries = (c.thoughts || []).map((t) => clean(t.summary)).filter(Boolean);
+        const text = (c.thoughts || []).map((t) => clean(t.content)).filter(Boolean).join('\n\n');
         const b = { type: 'thinking' };
         if (text) b.text = text;
         if (summaries.length) b.summaries = summaries;
         return b.text || b.summaries ? [b] : [];
       }
 
-      case 'reasoning_recap':
-        return c.content ? [{ type: 'thinking', summaries: [c.content] }] : [];
+      case 'reasoning_recap': {
+        const t = clean(c.content);
+        return t ? [{ type: 'thinking', summaries: [t] }] : [];
+      }
 
       default:
         return [{ type: c.content_type || 'unknown', meta: c }];
