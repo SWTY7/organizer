@@ -1,53 +1,59 @@
-# Phase 0 probes
+# Phase 0 probe
 
-Throwaway diagnostic scripts. They answer the questions the plan cannot answer
-from documentation, before we commit any of it to code:
+One file: [`probe.js`](probe.js). Paste it into the DevTools console on **either**
+claude.ai **or** chatgpt.com — it detects which site it's on and runs the right
+checks. If you paste it somewhere else it says so and stops.
+
+## Running it
+
+1. Open claude.ai or chatgpt.com, logged in.
+2. `F12` → **Console**. If Chrome blocks the paste, type `allow pasting`, Enter.
+3. Paste the whole file, Enter.
+4. `copy(__probe.schema)` → paste that back into the Claude Code session.
+
+Run it on both sites. Two pastes total.
+
+**One tip that matters:** on ChatGPT, have a conversation where you **edited a
+prompt or hit regenerate** at the top of your list. Otherwise the probe
+correctly reports "linear" and we learn nothing about branching, which is the
+single thing most likely to force a schema change.
+
+## What it's answering
+
+These are the questions the documentation cannot answer, and the reason nothing
+else gets built until they're settled:
 
 1. Do the internal JSON endpoints work with just a logged-in session?
 2. What is the **exact** shape of what comes back?
-3. Does the conversation list carry an "updated at" field? (If yes, **delta
-   sync** works — the one-click "bring my library current" feature. If no, the
-   capturer has to check conversations one by one, which is much slower.)
-4. Are branches (from edited prompts / regenerated answers) actually present?
-5. What `content_type` / block types really occur, so `ContentBlock` covers them?
-
-## Running them
-
-| | |
-|---|---|
-| **Claude** | Open [claude.ai](https://claude.ai), F12 → Console, paste [`claude.js`](claude.js) |
-| **ChatGPT** | Open [chatgpt.com](https://chatgpt.com), F12 → Console, paste [`chatgpt.js`](chatgpt.js) |
-
-If Chrome refuses the paste, type `allow pasting` into the console first, press
-Enter, then paste.
-
-Tip for question 4: run the ChatGPT probe while a conversation **where you
-edited a prompt or hit regenerate** is at the top of your list, otherwise the
-probe will correctly report "linear" and tell us nothing about branching.
+3. Does the conversation list carry an "updated at" field? If yes, **delta sync**
+   works — one click to bring the whole library current. If no, the capturer has
+   to check conversations one at a time, and the ease-of-use story for capture
+   changes shape entirely.
+4. Are branches (edited prompts, regenerated answers) actually present, and under
+   which request parameters?
+5. Which content block types really occur, so `ContentBlock` in
+   [`../../SPEC.md`](../../SPEC.md) covers them?
 
 ## Privacy
 
-These scripts make no outbound requests. They call the site you are already on,
-with the session you already have.
+No outbound requests to anywhere. It calls the site you're already on, with the
+session you already have.
 
 Two outputs, deliberately separated:
 
-- **`__probe.schema`** — key names, types, string *lengths*, and a short
-  whitelist of enum values (`role`, `content_type`, `model`, …). No message
-  text, no conversation titles. **This is the one to share.**
-- **`__probe.raw`** / **`__probe.save()`** — the actual unredacted payloads,
-  for your own inspection. These contain real conversation content. Keep them
-  local; they are gitignored.
+| | contains | share it? |
+|---|---|---|
+| `__probe.schema` | key names, types, string *lengths*, and a whitelist of enum values (`role`, `content_type`, `model`, …) | **yes** — no message text, no titles |
+| `__probe.raw` / `__probe.save()` | the real unredacted payloads | **no** — keep local, gitignored |
 
-The ChatGPT probe reads an access token from `/api/auth/session` in order to
-call `/backend-api/`. It never prints, stores, or downloads that token.
+On ChatGPT the probe reads an access token from `/api/auth/session` to call
+`/backend-api/`. It is never printed, stored, or included in either output.
 
-## After running
+## Reading the output
 
-```
-copy(__probe.schema)
-```
-
-Paste that back into the Claude Code session. It's what pins down the canonical
-model in [`../../PLAN.md`](../../PLAN.md) §3 and the format in
-[`../../SPEC.md`](../../SPEC.md).
+| Message | Means |
+|---|---|
+| `got HTML instead of JSON` | wrong site, route doesn't exist, or your session expired |
+| `DELTA SYNC: VIABLE` | the list carries a timestamp — one-click sync is possible |
+| `TREE CONFIRMED` | real branches exist; a flat message list would lose data |
+| `This conversation is linear` | not a failure — try one where you edited a prompt |

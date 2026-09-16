@@ -51,7 +51,7 @@ Adding a provider means writing a capturer. The app never learns what
 |---|---|
 | [`PLAN.md`](PLAN.md) | full plan, phases, risks |
 | [`SPEC.md`](SPEC.md) | the `.chat` interchange format |
-| [`tools/probes/`](tools/probes/) | Phase 0 diagnostics — confirm real API shapes |
+| [`tools/probes/`](tools/probes/) | Phase 0 diagnostic — confirms real API shapes |
 
 ## Phases
 
