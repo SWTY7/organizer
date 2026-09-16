@@ -24,3 +24,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Exported chat data — real conversation content, never commit
+*.chatpack.json
