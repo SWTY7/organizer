@@ -12,6 +12,7 @@
    ========================================================================== */
 
 import * as T from '../packages/organize/folders.js';
+import * as O from '../packages/organize/outline.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, cls, txt) => {
@@ -115,6 +116,9 @@ const S = {
   branchPick: new Map(),
   collapsed: new Set(),  // folder ids; view state, so localStorage not IndexedDB
   subfolders: true,      // does a folder view include the folders beneath it
+  template: 'transcript',
+  anchor: new Map(),     // message id -> the element showing it, for the ribbon
+  bars: [],
 };
 
 /* Per-device view state. Deliberately not in the store: it is about this
@@ -124,12 +128,14 @@ const PREFS = {
     try {
       S.collapsed = new Set(JSON.parse(localStorage.getItem('organizer.collapsed') || '[]'));
       S.subfolders = localStorage.getItem('organizer.subfolders') !== '0';
+      S.template = localStorage.getItem('organizer.template') || 'transcript';
     } catch { /* private mode, or storage off — defaults are fine */ }
   },
   save() {
     try {
       localStorage.setItem('organizer.collapsed', JSON.stringify([...S.collapsed]));
       localStorage.setItem('organizer.subfolders', S.subfolders ? '1' : '0');
+      localStorage.setItem('organizer.template', S.template);
     } catch {}
   },
 };
@@ -1004,6 +1010,17 @@ function renderThread() {
     renderAll();
   };
   tools.append(addTag);
+
+  const seg = el('div', 'seg');
+  for (const [key, t] of Object.entries(TEMPLATES)) {
+    const b = el('button', null, t.label);
+    b.setAttribute('aria-pressed', String(S.template === key));
+    b.title = t.hint;
+    b.onclick = () => { S.template = key; PREFS.save(); renderThread(); };
+    seg.append(b);
+  }
+  tools.append(seg);
+
   head.append(tools);
   wrap.append(head);
 
@@ -1013,37 +1030,173 @@ function renderThread() {
       `That usually means branching, or messages whose parent was not captured.`));
   }
 
-  for (const msg of path) {
-    const box = el('div', `msg ${msg.role}`);
-    const who = el('div', 'who');
-    who.append(el('span', null, msg.role === 'user' ? 'You' : msg.role));
-    if (msg.model) who.append(el('span', 'tagline', msg.model));
-    if (msg.status && msg.status !== 'complete') who.append(el('span', 'tagline', msg.status));
+  S.anchor = new Map();
+  const body = el('div', 'thread-body');
+  (TEMPLATES[S.template] || TEMPLATES.transcript).render(body, path, kids);
+  wrap.append(body);
 
-    const sibs = kids.get(msg.parentId) || [];
-    if (sibs.length > 1) {
-      const idx = sibs.findIndex((s) => s.id === msg.id);
-      const br = el('div', 'branch');
-      br.append(el('span', null, `branch ${idx + 1}/${sibs.length}`));
-      const goB = (d) => {
-        S.branchPick.set(msg.parentId, sibs[(idx + d + sibs.length) % sibs.length].id);
-        renderThread();
-      };
-      const prev = el('button', null, '‹'); prev.onclick = () => goB(-1);
-      const next = el('button', null, '›'); next.onclick = () => goB(1);
-      br.append(prev, next);
-      who.append(br);
-    }
-    box.append(who);
-
-    const body = el('div', 'body');
-    for (const b of msg.content) body.append(renderBlock(b));
-    box.append(body);
-    wrap.append(box);
-  }
-
-  main.append(wrap);
+  const shell = el('div', 'thread-wrap');
+  shell.append(wrap, renderRibbon(path));
+  main.append(shell);
   main.scrollTop = 0;
+  syncRibbon();
+}
+
+/* --------------------------------------------------------------- templates */
+
+/** One message, as the transcript draws it. Shared by every template. */
+function renderMessage(msg, kids) {
+  const box = el('div', `msg ${msg.role}`);
+  const who = el('div', 'who');
+  who.append(el('span', null, msg.role === 'user' ? 'You' : msg.role));
+  if (msg.model) who.append(el('span', 'tagline', msg.model));
+  if (msg.status && msg.status !== 'complete') who.append(el('span', 'tagline', msg.status));
+
+  const sibs = kids.get(msg.parentId) || [];
+  if (sibs.length > 1) {
+    const idx = sibs.findIndex((s) => s.id === msg.id);
+    const br = el('div', 'branch');
+    br.append(el('span', null, `branch ${idx + 1}/${sibs.length}`));
+    const goB = (d) => {
+      S.branchPick.set(msg.parentId, sibs[(idx + d + sibs.length) % sibs.length].id);
+      renderThread();
+    };
+    const prev = el('button', null, '‹'); prev.onclick = () => goB(-1);
+    const next = el('button', null, '›'); next.onclick = () => goB(1);
+    br.append(prev, next);
+    who.append(br);
+  }
+  box.append(who);
+
+  const b = el('div', 'body');
+  for (const blk of msg.content) b.append(renderBlock(blk));
+  box.append(b);
+  return box;
+}
+
+const TEMPLATES = {
+  transcript: {
+    label: 'Transcript',
+    hint: 'Every message, top to bottom',
+    render(into, path, kids) {
+      for (const msg of path) {
+        const box = renderMessage(msg, kids);
+        S.anchor.set(msg.id, box);
+        into.append(box);
+      }
+    },
+  },
+
+  outline: {
+    label: 'Outline',
+    hint: 'One line per exchange — click to open it',
+    render(into, path, kids) {
+      const groups = O.turns(path);
+
+      const bar = el('div', 'outline-bar');
+      const n = groups.length;
+      bar.append(el('span', null, `${n} exchange${n > 1 ? 's' : ''}`));
+      const all = el('button', 'icon-btn', 'Expand all');
+      all.onclick = () => {
+        const open = all.textContent === 'Expand all';
+        for (const d of into.querySelectorAll('.oturn')) setOpen(d, open);
+        all.textContent = open ? 'Collapse all' : 'Expand all';
+      };
+      bar.append(all);
+      into.append(bar);
+
+      const setOpen = (row, open) => {
+        row.classList.toggle('open', open);
+        const detail = row.querySelector('.odetail');
+        // Built on first open: a 300-message conversation should not render
+        // 300 full turns to show you 300 one-line summaries.
+        if (open && !detail.dataset.built) {
+          detail.dataset.built = '1';
+          for (const msg of row._msgs) detail.append(renderMessage(msg, kids));
+        }
+        detail.hidden = !open;
+      };
+
+      for (const [i, t] of groups.entries()) {
+        const msgs = [t.user, ...t.replies].filter(Boolean);
+        const row = el('div', 'oturn');
+        row._msgs = msgs;
+        for (const msg of msgs) S.anchor.set(msg.id, row);
+
+        const head = el('button', 'ohead');
+        head.append(el('span', 'onum', String(i + 1)));
+
+        const mid = el('span', 'omid');
+        const q = t.user ? O.clip(O.plain(O.gist([t.user], 400) || '(no text)'), 160) : '(continues)';
+        mid.append(el('span', 'oq', q));
+        // A reply the model gave sections to is better summarised by those
+        // sections than by its opening sentence.
+        const hs = O.headings(t.replies, 4);
+        const g = hs.length > 1 ? hs.map((h) => h.text).join('  ·  ') : O.gist(t.replies);
+        if (g) mid.append(el('span', `og${hs.length > 1 ? ' sections' : ''}`, g));
+
+        const bits = O.badges(O.stats(t.replies));
+        if (bits.length) mid.append(el('span', 'obadges', bits.join(' · ')));
+        head.append(mid);
+        head.append(el('span', 'ocaret', '▸'));
+
+        const detail = el('div', 'odetail');
+        detail.hidden = true;
+
+        head.onclick = () => setOpen(row, !row.classList.contains('open'));
+        row.append(head, detail);
+        into.append(row);
+      }
+    },
+  },
+};
+
+/* ------------------------------------------------------------------ ribbon */
+
+/**
+ * A map of the conversation: one bar per message, tall where the message is
+ * long. It stays put while the thread scrolls, so a 200-message chat has
+ * something you can aim at.
+ */
+function renderRibbon(path) {
+  const strip = el('div', 'ribbon');
+  if (path.length < 6) return strip;  // nothing to navigate
+  strip.title = 'Map of this conversation — click to jump';
+
+  S.bars = [];
+  for (const bar of O.ribbon(path)) {
+    const b = el('button', `bar ${bar.role}`);
+    b.style.flexGrow = String(bar.weight);
+    const marks = [bar.code && 'code', bar.media && 'image', bar.thought && 'thinking', bar.tool && 'tool']
+      .filter(Boolean);
+    if (marks.length) b.classList.add('marked');
+    b.title = `${bar.role === 'user' ? 'You' : bar.role}${marks.length ? ` — ${marks.join(', ')}` : ''}`;
+    b.onclick = () => {
+      const node = S.anchor.get(bar.id);
+      if (!node) return;
+      // In Outline the target is a collapsed row; open it, or the jump lands
+      // on a line that does not contain what you clicked towards.
+      if (node.classList.contains('oturn') && !node.classList.contains('open')) {
+        node.querySelector('.ohead').click();
+      }
+      node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    S.bars.push({ id: bar.id, node: b });
+    strip.append(b);
+  }
+  return strip;
+}
+
+/** Mark the bar for whatever is covering the top of the viewport. */
+function syncRibbon() {
+  if (!S.bars?.length) return;
+  const top = $('#main').getBoundingClientRect().top;
+  const tops = S.bars.map((b) => {
+    const node = S.anchor.get(b.id);
+    return node?.isConnected ? node.getBoundingClientRect().top : Infinity;
+  });
+  const at = O.activeIndex(tops, top);
+  S.bars.forEach((b, i) => b.node.classList.toggle('here', i === at));
 }
 
 /* ------------------------------------------------------------------- misc */
@@ -1150,6 +1303,13 @@ function wire() {
   });
 
   $('#navToggle').onclick = () => document.body.classList.toggle('shownav');
+
+  let queued = false;
+  $('#main').addEventListener('scroll', () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(() => { queued = false; syncRibbon(); });
+  }, { passive: true });
 
   $('#wipe').onclick = async () => {
     if (!S.convs.length) return;

@@ -74,7 +74,14 @@ one click and the correction is permanent.
 ## The templates
 
 Eight, each earning its place. Switching between them is a toolbar in the thread
-header and is per-conversation, remembered.
+header.
+
+One choice, remembered across the whole library rather than per conversation.
+Per-conversation memory sounded better than it is: opening two chats and
+getting two different layouts, for a reason you set weeks ago and cannot see,
+is a surprise rather than a convenience. If a per-conversation default proves
+necessary, the honest version is the app choosing it from length — not
+remembering an old click.
 
 ### 1. Transcript — the baseline
 
@@ -150,7 +157,7 @@ also where reconstructed artifacts live (see PLAN.md, Track B).
 
 | | template | needs | cost |
 |---|---|---|---|
-| 1 | Outline + Map | nothing | small |
+| 1 | Outline + Map ✅ | nothing | small |
 | 2 | Spine | Outline | small |
 | 3 | Sections — manual | `meta.sections` | small |
 | 4 | Columns | sections | medium |
