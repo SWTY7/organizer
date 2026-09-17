@@ -449,9 +449,12 @@ compressed entries with no library. The reader keeps accepting bare `.json`
 forever. `SPEC.md` already reserves `blobHash` for this; the slot just gets
 filled.
 
-Size honesty: a few hundred images at 300 KB each is ~100 MB. Default to
-skipping anything over a couple of MB, and make it re-runnable per conversation
-rather than all-or-nothing.
+Size honesty, now measured rather than guessed: Claude serves a 1456×817 image
+as 27 KB of webp, not the ~300 KB assumed here, so a few hundred images is tens
+of megabytes. Still cap it and still make it re-runnable per conversation
+rather than all-or-nothing, but this is a much smaller problem than it looked.
+The webp is likely a re-encode, so it is an archive you can read rather than
+the file exactly as uploaded.
 
 **SVG and HTML the model wrote** are not a fetching problem at all — that text
 is already in the transcript, sitting in a code block. It is purely a *rendering
@@ -485,7 +488,12 @@ both providers give references rather than bytes:
 | Claude | `files[]` — `file_uuid`, `preview_url`, `thumbnail_url` |
 | ChatGPT | `metadata.attachments[]` — `id`, `name`, `mime_type`, `size`, `library_file_id`; plus `asset_pointer` in content |
 
-Three questions remain open, and Phase 0b answers all of them read-only:
+**Answered — see [`tools/FINDINGS.md`](tools/FINDINGS.md).** Claude already
+hands us the text of uploaded documents, and `preview_url` is the full-size
+image rather than a preview. ChatGPT has no extracted text, and its download
+endpoint works but needs one re-run to confirm — the first probe asked without
+cookies for a URL that turned out to be same-origin, and earned a 403 of its
+own making. The questions as originally posed:
 
 1. Does Claude's `preview_url` serve the **original** bytes to a cookied
    request, or only a downsized preview? Is there a full-file endpoint?

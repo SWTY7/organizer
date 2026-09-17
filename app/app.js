@@ -226,7 +226,9 @@ async function importFiles(files) {
 const blockText = (b) => {
   if (!b) return '';
   if (b.type === 'thinking') return [b.text || '', ...(b.summaries || [])].join(' ');
-  return b.text || b.filename || '';
+  // A file has both, and you might search for either the name or the contents.
+  if (b.type === 'file' || b.type === 'image') return [b.filename, b.text].filter(Boolean).join(' ');
+  return b.text || '';
 };
 const convText = (c) =>
   [c.title, c.summary || '', ...c.messages.flatMap((m) => m.content.map(blockText))].join('\n');
@@ -916,12 +918,27 @@ function renderBlock(b) {
       pre.append(el('code', null, b.text || ''));
       inner.append(pre); d.append(inner); return d;
     }
-    case 'image':
     case 'file': {
-      const label = b.type === 'image' ? 'Image' : 'File';
+      // An uploaded document usually arrives with its text already extracted,
+      // so there is something real to show rather than a shrug.
+      if (b.text) {
+        const chars = b.text.length.toLocaleString();
+        const d = el('details', 'blk');
+        d.append(el('summary', null, `Attached — ${b.filename || 'file'} · ${chars} characters`));
+        const inner = el('div', 'inner');
+        const pre = el('pre');
+        pre.append(el('code', null, b.text));
+        inner.append(pre);
+        d.append(inner);
+        return d;
+      }
+      const name = b.filename ? ` · ${b.filename}` : '';
+      return el('div', 'placeholder', `File${name} — not downloaded (captured as a reference)`);
+    }
+    case 'image': {
       const name = b.filename ? ` · ${b.filename}` : '';
       const dim = b.width && b.height ? ` · ${b.width}×${b.height}` : '';
-      return el('div', 'placeholder', `${label}${name}${dim} — not downloaded (attachments are captured as references)`);
+      return el('div', 'placeholder', `Image${name}${dim} — not downloaded (captured as a reference)`);
     }
     case 'citation':
       return el('div', 'placeholder', `Citation — ${b.title || b.url || ''}`);

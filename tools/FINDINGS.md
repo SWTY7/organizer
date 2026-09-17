@@ -114,3 +114,88 @@ chatgpt.com
 
 Cookies alone were not enough for ChatGPT; `/backend-api/` needs the bearer
 token from the session endpoint. Claude worked on cookies alone.
+
+---
+
+# Phase 0b findings — assets
+
+Probed 2026-09-17 against live claude.ai and chatgpt.com, read-only. Sample:
+Claude 286 conversations, 4 scanned before a hit; ChatGPT 40 listed, 2 scanned.
+
+## 1. Claude already hands us the text of uploaded documents ✅
+
+`attachments[]` is a **separate list from `files[]`**, and the converter was
+reading only `files`. Its keys:
+
+```
+created_at  extracted_content  file_name  file_size  file_type  id
+```
+
+`extracted_content` was populated: **11,758 characters** for a `txt` upload
+declaring `file_size: 18862`.
+
+So every document ever attached to a Claude chat is already arriving in the
+payload, and was being thrown away. No fetch, no bytes to store, and it becomes
+full-text searchable on import. This is the cheapest capability in the project.
+
+**Open, and deliberately not assumed away:** 11,758 characters against 18,862
+bytes is a ratio of 0.62. That is exactly what UTF-8 does to non-Latin text —
+Korean runs three bytes per character — so it is very likely complete. But it is
+also what truncation looks like, and characters and bytes are not comparable.
+The block keeps `meta.declaredBytes` so the question can be settled later, and
+nothing claims the text is complete in the meantime. To settle it: attach a
+pure-ASCII file of known length and compare.
+
+## 2. Claude's `preview_url` is the original, not a preview ✅
+
+| | pixels | bytes | type |
+|---|---|---|---|
+| declared | 1456 × 817 | — | — |
+| `preview_url` | **1456 × 817** | 27,854 | `image/webp` |
+| `thumbnail_url` | 400 × 224 | 5,870 | `image/webp` |
+
+Full declared resolution, on session cookies alone. The name is misleading:
+`thumbnail_url` is the downscale, `preview_url` is the image.
+
+Two consequences. Capturing images is cheap — 27 KB for a 1456×817 frame, not
+the ~300 KB the plan assumed, so a library of a few hundred images is tens of
+megabytes rather than a hundred. And it is served as `webp`, which means it may
+be a re-encode rather than the file as uploaded; good enough to read, not a
+byte-exact archive of the original.
+
+URL shape: `/api/{org}/files/{uuid}/preview`.
+
+## 3. ChatGPT: endpoint works, and my first probe was wrong ⚠️
+
+`GET /backend-api/files/{id}/download` answered, returning:
+
+```
+creation_time  download_url  file_name  file_size_bytes  metadata
+mime_type  no_auth_user_upload  status
+```
+
+`download_url` is on **chatgpt.com itself** — same origin, not the cross-origin
+signed blob URL the plan assumed. Fetching it returned **403**, but the probe
+asked with `credentials: 'omit'`, because it was written expecting a signed URL
+that carries its own authorisation. A same-origin URL fetched without cookies is
+supposed to be refused. The 403 is the probe's, not the provider's.
+
+Fixed: the probe now tries the session first, then the bearer token, then
+anonymous, and reports the server's own refusal text so the three cases cannot
+be confused again. **Needs a re-run to close.**
+
+## 4. ChatGPT has no extracted text ❌
+
+`metadata.attachments[]` keys: `id`, `library_file_id`, `mime_type`, `name`,
+`size`. That is all. A PDF that is free on Claude is a download on ChatGPT.
+
+## 5. `asset_pointer` is not `file-service://`
+
+The scheme observed was **`sediment://`**, on a `image_asset_pointer` declaring
+476 × 685 and 30,557 bytes. Keys: `asset_pointer`, `content_type`, `fovea`,
+`height`, `metadata`, `size_bytes`, `width`.
+
+Anything that pattern-matches `file-service://` is matching a scheme this
+account does not use. An image pointer is also a different kind of id from an
+upload's, so the probe now resolves both separately rather than assuming one
+answer covers the other.

@@ -92,11 +92,29 @@ import { download } from '../packages/adapters/shared.js';
     } else if (d.fetched?.ok) {
       const px = d.fetched.pixels ? `, ${d.fetched.pixels.w}×${d.fetched.pixels.h}` : '';
       big(`FILES ARE RETRIEVABLE — ${d.fetched.bytes} bytes${px} from ${d.host}`, GOOD);
+      log(d.crossOrigin
+        ? 'The URL is on another origin, so only the extension can fetch it.'
+        : 'Same origin, with the session — the extension can do this too.');
+    } else if (d.withToken?.ok) {
+      big(`FILES ARE RETRIEVABLE, but only with the bearer token — ${d.withToken.bytes} bytes`, GOOD);
     } else if (d.fetched?.error) {
-      big(`The signed URL exists but this page cannot fetch it: ${d.fetched.error}`, WARN);
-      log(`Host is ${d.host}. The extension can request that origin; a page on chatgpt.com cannot.`);
+      big(`The URL exists but this page cannot fetch it: ${d.fetched.error}`, WARN);
+      log(`Host is ${d.host}.`);
     } else {
-      big(`The signed URL answered HTTP ${d.fetched?.status}`, WARN);
+      big(`The download URL answered HTTP ${d.fetched?.status} with the session`, ERR);
+      if (d.fetched?.refusal) log(`It said: ${d.fetched.refusal}`);
+      if (d.anonymous) log(`Without cookies: HTTP ${d.anonymous.status}. With the token: HTTP ${d.withToken?.status}.`);
+    }
+
+    if (result.pointerDownload) {
+      const p = result.pointerDownload;
+      big(p.fetched?.ok
+        ? `Generated images are retrievable too — ${p.fetched.bytes} bytes`
+        : `Image pointers do NOT resolve the same way (${p.error || 'HTTP ' + p.fetched?.status})`,
+      p.fetched?.ok ? GOOD : WARN);
+    }
+    if (result.pointer?.scheme && result.pointer.scheme !== 'file-service') {
+      log(`Note: asset_pointer scheme is "${result.pointer.scheme}", not the file-service the format assumed.`);
     }
   }
 

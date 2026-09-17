@@ -114,7 +114,7 @@ let the reader decide, rather than dropping data at capture time.
 | `tool_use` | `name`, `input?`, `text?`, `lang?`, `id?` | |
 | `tool_result` | `text?`, `toolUseId?`, `blobHash?`, `isError?` | |
 | `image` | `blobHash?`, `srcRef?`, `mime?`, `width?`, `height?`, `alt?` | |
-| `file` | `blobHash?`, `srcRef?`, `mime?`, `filename` | |
+| `file` | `blobHash?`, `srcRef?`, `text?`, `mime?`, `filename` | `text` is the document's extracted contents — see below |
 | `citation` | `url`, `title?`, `quote?` | |
 
 **`thinking` carries `summaries`** because that is what the data actually looks
@@ -128,6 +128,19 @@ you a reference needing a second authenticated fetch. A capturer that resolves
 it sets `blobHash` and puts the bytes in `blobs/`. One that doesn't sets
 `srcRef` and the block renders as an unresolved placeholder. Both are valid —
 this keeps one-click capture fast and lets a full sync backfill blobs later.
+
+**`text` on a `file` is not a third way of doing the same thing.** It is the
+document's *contents as text*, which Claude extracts on upload and returns
+inside the conversation payload — no fetch, no bytes, and searchable the moment
+it is imported. A block may have `text` and still want `blobHash` later, if you
+also want the original file. Phase 0b measured one at 11,758 characters against
+a declared 18,862 bytes; those units are not comparable, so a capturer MUST NOT
+present extracted text as known-complete. Keep `meta.declaredBytes` so the
+question stays answerable.
+
+ChatGPT has no equivalent: its `attachments[]` carries `id`, `name`,
+`mime_type`, `size`, `library_file_id` and nothing else. The same document is
+free on one provider and a download on the other.
 
 Unknown `type` values MUST be preserved verbatim and rendered as a labelled
 fallback, never dropped.
@@ -155,7 +168,8 @@ lost.
 | `content[].type: "text"` | `text` |
 | `content[].type: "thinking"` | `thinking` (map `summaries[].summary` → `summaries[]`) |
 | `stop_reason` | `stopReason` |
-| `files[]` | `image` / `file` with `srcRef` from `preview_url` |
+| `files[]` | `image` / `file` with `srcRef` from `preview_url` (full resolution; `thumbnail_url` → `meta.thumbRef`) |
+| `attachments[]` | `file` with `text` from `extracted_content` — a **separate list** from `files[]` |
 | `project_uuid` + `project.name` | `projectRef` |
 
 ### ChatGPT → canonical
@@ -167,7 +181,8 @@ lost.
 | `current_node` | `currentLeafId` |
 | `author.role` | `role` (`user` / `assistant` / `tool` pass through) |
 | `content_type: "text"` | `text`, joining `parts[]` |
-| `content_type: "multimodal_text"` | split `parts[]`: strings → `text`, `image_asset_pointer` → `image` with `srcRef: asset_pointer` |
+| `content_type: "multimodal_text"` | split `parts[]`: strings → `text`, `image_asset_pointer` → `image` with `srcRef: asset_pointer` (scheme is **not** fixed — `sediment://` observed where `file-service://` was assumed) |
+| `metadata.attachments[]` | `file` with `srcRef` from the id — **no extracted text on this provider** |
 | `content_type: "code"`, `recipient: "all"` | `code` |
 | `content_type: "code"`, `recipient: "python"` \| `"container.exec"` | `tool_use` with `name: recipient` |
 | `content_type: "execution_output"` | `tool_result` |

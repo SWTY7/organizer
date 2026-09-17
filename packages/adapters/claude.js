@@ -116,7 +116,12 @@ export const claude = {
     }
   },
 
-  /** Attachments arrive as URLs needing a second authenticated fetch, not bytes. */
+  /**
+   * Images and other `files[]`: URLs needing a second authenticated fetch.
+   *
+   * `preview_url` was confirmed in Phase 0b to serve the image at full
+   * declared resolution, not a downscale — `thumbnail_url` is the small one.
+   */
   files(msg) {
     return (msg.files || []).map((f) => ({
       type: (f.file_kind || '').toLowerCase() === 'image' ? 'image' : 'file',
@@ -124,7 +129,56 @@ export const claude = {
       filename: f.file_name,
       width: f.preview_asset?.image_width,
       height: f.preview_asset?.image_height,
-      meta: { fileUuid: f.file_uuid },
+      meta: { fileUuid: f.file_uuid, thumbRef: f.thumbnail_url || null },
+    }));
+  },
+
+  /**
+   * Uploaded documents, whose text is already here.
+   *
+   * `attachments[]` is a separate list from `files[]`, and it carries
+   * `extracted_content` — the plain text Claude read out of the upload. No
+   * second fetch, no bytes to store, and it makes every document you have
+   * attached searchable. This was being discarded: the converter read `files`
+   * and nothing else.
+   *
+   * `declaredBytes` sits next to the text so a later check can tell a complete
+   * extraction from a truncated one. The two are not directly comparable — one
+   * counts characters, the other bytes — so nothing here claims the text is
+   * complete.
+   */
+  attachments(msg) {
+    return (msg.attachments || []).map((a) => ({
+      type: 'file',
+      filename: a.file_name,
+      mime: a.file_type || null,
+      ...(typeof a.extracted_content === 'string' && a.extracted_content
+        ? { text: a.extracted_content }
+        : {}),
+      meta: { attachmentId: a.id, declaredBytes: a.file_size ?? null },
+    }));
+  },
+
+  /**
+   * Uploaded documents, whose text is already here.
+   *
+   * `attachments[]` is a different list from `files[]`, and it carries
+   * `extracted_content` — the plain text Claude read out of the upload. No
+   * second fetch, no bytes to store, and it makes every PDF and source file
+   * you have ever attached searchable. This was being discarded.
+   *
+   * `declaredBytes` is kept alongside the character count so a later check can
+   * tell a complete extraction from a truncated one.
+   */
+  attachments(msg) {
+    return (msg.attachments || []).map((a) => ({
+      type: 'file',
+      filename: a.file_name,
+      mime: a.file_type || null,
+      ...(typeof a.extracted_content === 'string' && a.extracted_content
+        ? { text: a.extracted_content }
+        : {}),
+      meta: { attachmentId: a.id, declaredBytes: a.file_size ?? null },
     }));
   },
 
@@ -144,6 +198,7 @@ export const claude = {
       let content = [];
       for (const c of m.content || []) content.push(...this.block(c));
       content.push(...this.files(m));
+      content.push(...this.attachments(m));
       // ?tree=True should always give content[]; fall back to the flat string.
       if (!content.length && m.text) content = [{ type: 'text', text: m.text }];
       if (!content.length) continue;

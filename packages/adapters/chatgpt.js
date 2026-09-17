@@ -364,9 +364,13 @@ export const chatgpt = {
       hasLibraryId: 'library_file_id' in att,
     } : null;
 
+    // The scheme is not a constant: "sediment://" turned up where the older
+    // "file-service://" was assumed. Report it rather than assume it.
+    const pointerId = String(pointer?.asset_pointer || '').split('://').pop() || null;
     result.pointer = pointer ? {
       keys: Object.keys(pointer).sort(),
       scheme: String(pointer.asset_pointer || '').split('://')[0] || null,
+      idShape: pointerId ? pointerId.replace(/[A-Za-z0-9]{8,}/g, '{id}') : null,
       declared: { w: pointer.width, h: pointer.height, bytes: pointer.size_bytes ?? null },
     } : null;
 
@@ -382,15 +386,48 @@ export const chatgpt = {
         const url = d.download_url || d.url || null;
         result.download.hasUrl = Boolean(url);
         if (url) {
-          // Origin only. The query string is the signature.
+          // Origin only. The query string may be a signature.
           result.download.host = (() => { try { return new URL(url).origin; } catch { return '(unparseable)'; } })();
           result.download.crossOrigin = result.download.host !== location.origin;
+
+          // Try the session first. The first run of this probe assumed a
+          // signed URL on someone else's origin and sent no cookies, which
+          // earned a 403 that looked like the provider refusing — when it was
+          // the probe refusing to identify itself. The URL is same-origin.
           await sleep(RATE_MS);
-          result.download.fetched = await inspectUrl(url, { credentials: 'omit' });
+          result.download.fetched = await this.http.inspect(url, { credentials: 'include' });
+          if (!result.download.fetched.ok) {
+            await sleep(RATE_MS);
+            result.download.withToken = await this.http.inspect(url, {
+              credentials: 'include', withAuth: true,
+            });
+            await sleep(RATE_MS);
+            result.download.anonymous = await this.http.inspect(url, { credentials: 'omit' });
+          }
         }
       } catch (e) {
         result.download.endpointOk = false;
         result.download.error = e.message;
+      }
+    }
+
+    // An image pointer is a different kind of id from an upload's. If the
+    // first id came from an attachment, this is still unanswered.
+    if (pointerId && pointerId !== id) {
+      await sleep(RATE_MS);
+      result.pointerDownload = {};
+      try {
+        const d = await this.http.getJson(`/backend-api/files/${pointerId}/download`);
+        result.pointerDownload.endpointOk = true;
+        result.pointerDownload.keys = Object.keys(d).sort();
+        const url = d.download_url || d.url || null;
+        if (url) {
+          await sleep(RATE_MS);
+          result.pointerDownload.fetched = await this.http.inspect(url, { credentials: 'include' });
+        }
+      } catch (e) {
+        result.pointerDownload.endpointOk = false;
+        result.pointerDownload.error = e.message;
       }
     }
     return result;
