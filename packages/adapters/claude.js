@@ -7,7 +7,7 @@
 
 import {
   SCHEMA_VERSION, iso, stableKey, convId, spliceParents,
-  makeHttp, summarize,
+  makeHttp, summarize, sleep, RATE_MS, inspectUrl, urlShape,
 } from './shared.js';
 
 /** Claude uses a sentinel uuid for "no parent" rather than null. */
@@ -234,6 +234,72 @@ export const claude = {
     const projects = await this.http.getJson(`/api/organizations/${this.orgId}/projects`);
     result.projectCount = Array.isArray(projects) ? projects.length : null;
     result.projectsShape = summarize(projects, 'projects');
+    return result;
+  },
+
+  /**
+   * Are uploaded files retrievable, and is document text already in hand?
+   *
+   * Two separate questions. `files[]` holds images and needs a second fetch;
+   * `attachments[]` may hold `extracted_content`, the plain text of an
+   * uploaded document — which would already be arriving in every payload that
+   * the converter currently ignores.
+   *
+   * Reports sizes, types and URL shapes. Never a filename, never a byte of
+   * content, so the output stays shareable.
+   */
+  async probeAssets(result, log = () => {}) {
+    const list = await this.http.getJson(`/api/organizations/${this.orgId}/chat_conversations`);
+    result.listCount = list.length;
+    result.scanned = 0;
+    result.messagesWithFiles = 0;
+    result.messagesWithAttachments = 0;
+
+    let file = null, att = null;
+    for (const c of list.slice(0, 40)) {
+      if (file && att) break;
+      await sleep(RATE_MS);
+      result.scanned++;
+      log(`scanning ${result.scanned}…`);
+      let d;
+      try {
+        d = await this.http.getJson(
+          `/api/organizations/${this.orgId}/chat_conversations/${c.uuid}?tree=True&rendering_mode=messages`);
+      } catch { continue; }
+      for (const m of d.chat_messages || []) {
+        if (m.files?.length) { result.messagesWithFiles++; file ||= m.files[0]; }
+        if (m.attachments?.length) { result.messagesWithAttachments++; att ||= m.attachments[0]; }
+      }
+    }
+
+    // Q1: does an attachment already carry the document's text?
+    result.attachments = att ? {
+      keys: Object.keys(att).sort(),
+      hasExtractedContent: typeof att.extracted_content === 'string',
+      extractedChars: typeof att.extracted_content === 'string' ? att.extracted_content.length : null,
+      fileType: att.file_type || null,
+      declaredSize: att.file_size ?? null,
+    } : null;
+
+    // Q2: is preview_url the original, or a downscaled preview?
+    if (file) {
+      result.files = {
+        keys: Object.keys(file).sort(),
+        kind: file.file_kind || null,
+        declared: file.preview_asset
+          ? { w: file.preview_asset.image_width, h: file.preview_asset.image_height }
+          : null,
+        previewShape: urlShape(file.preview_url),
+        thumbnailShape: urlShape(file.thumbnail_url),
+      };
+      for (const which of ['preview_url', 'thumbnail_url']) {
+        if (!file[which]) continue;
+        await sleep(RATE_MS);
+        result.files[which] = await inspectUrl(new URL(file[which], location.origin).href);
+      }
+    } else {
+      result.files = null;
+    }
     return result;
   },
 };

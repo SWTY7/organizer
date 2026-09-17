@@ -1,6 +1,6 @@
 # tools
 
-Two console scripts. Paste either into DevTools on **claude.ai** or
+Three console scripts. Paste any of them into DevTools on **claude.ai** or
 **chatgpt.com** — each detects which provider you're on and runs the matching
 adapter. If you paste one somewhere else it says so and stops.
 
@@ -8,6 +8,7 @@ adapter. If you paste one somewhere else it says so and stops.
 |---|---|
 | [`dist/probe.js`](dist/probe.js) | diagnostics — confirms API shapes, reports what changed |
 | [`dist/export.js`](dist/export.js) | converts your chats to `.chat` files |
+| [`dist/assets.js`](dist/assets.js) | are uploaded files retrievable? — Phase 0b |
 
 If Chrome blocks the paste, type `allow pasting`, Enter, then paste.
 
@@ -43,6 +44,32 @@ Run `copy(__probe.schema)` to put it on the clipboard.
 
 See [FINDINGS.md](FINDINGS.md) for what the Phase 0 run turned up.
 
+## assets.js
+
+Phase 0b. Three questions that gate whether the `.chat` format starts carrying
+bytes, and they are worth answering before it does:
+
+1. **Does Claude already hand us the text of uploaded documents?** Messages
+   carry `files[]` *and* `attachments[]`, and the converter only reads the
+   first. If `attachments[].extracted_content` is populated, the text of every
+   PDF and source file you have ever uploaded is already arriving in the
+   payload and being discarded — searchable for free, no download at all.
+2. **Is Claude's `preview_url` the original image, or a downscaled preview?**
+   It fetches the image and compares its real pixel dimensions against the
+   dimensions the payload declares.
+3. **Does ChatGPT turn a file id into bytes this page may fetch?** The download
+   endpoint hands back a signed URL on another origin, which a page on
+   chatgpt.com may well be refused. That refusal is an answer, not a failure —
+   the extension can request an origin a page cannot.
+
+It scans up to 40 conversations looking for one that has an attachment, at
+about three requests a second, and stops as soon as it finds what it needs. If
+it reports finding nothing, upload a file to any chat and run it again.
+
+Read-only, and it records what assets **are** — status, type, byte size, pixel
+dimensions — never what they contain. No filename, no document text, no
+signature from a signed URL. `copy(__assets.schema)` is safe to paste back.
+
 ## Where the code actually lives
 
 `dist/` is **generated**. Don't edit it.
@@ -55,6 +82,7 @@ packages/adapters/
   index.js       registry: host -> adapter
 tools/
   probe.entry.js    drives an adapter's probe()
+  assets.entry.js   drives an adapter's probeAssets()
   export.entry.js   drives an adapter's convert()
   build.mjs         concatenates the above into dist/
 ```
@@ -108,3 +136,6 @@ Attachments come through as `srcRef` — a URL or asset pointer, not bytes.
 Neither provider inlines the data, so resolving them needs a second
 authenticated fetch per file. Images render as placeholders in the reader until
 a later backfill pass.
+
+`assets.js` is the script that measures how big that gap actually is. Run it
+before the format changes to carry bytes.

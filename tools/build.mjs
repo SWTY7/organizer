@@ -28,6 +28,7 @@ const MODULES = [
 const TOOLS = [
   { entry: 'tools/probe.entry.js', out: 'tools/dist/probe.js', name: 'probe' },
   { entry: 'tools/export.entry.js', out: 'tools/dist/export.js', name: 'export' },
+  { entry: 'tools/assets.entry.js', out: 'tools/dist/assets.js', name: 'assets' },
 ];
 
 /** Strip module syntax so the pieces can be concatenated into one scope. */

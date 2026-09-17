@@ -7,7 +7,7 @@
 
 import {
   SCHEMA_VERSION, iso, stableKey, convId, spliceParents,
-  makeHttp, summarize, sleep, RATE_MS,
+  makeHttp, summarize, sleep, RATE_MS, inspectUrl, urlShape,
 } from './shared.js';
 
 /**
@@ -310,6 +310,88 @@ export const chatgpt = {
         recipients: [...recips],
         shape: summarize(d, 'conversation'),
       };
+    }
+    return result;
+  },
+
+  /**
+   * Are uploaded files and generated images retrievable?
+   *
+   * ChatGPT references assets two ways: `metadata.attachments[]` on a message,
+   * and `asset_pointer: "file-service://file-…"` inside multimodal content.
+   * Both are ids, not bytes. The open question is whether the download
+   * endpoint hands back a URL this page is actually allowed to fetch — a
+   * signed URL on another origin may well refuse, and that refusal is the
+   * answer, not a failure.
+   *
+   * Reports statuses, sizes and hosts. Never a filename, never the signature
+   * on a signed URL, never the bearer token.
+   */
+  async probeAssets(result, log = () => {}) {
+    const list = await this.http.getJson('/backend-api/conversations?offset=0&limit=40&order=updated');
+    const items = list.items || [];
+    result.listCount = items.length;
+    result.scanned = 0;
+    result.messagesWithAttachments = 0;
+    result.assetPointers = 0;
+
+    let att = null, pointer = null;
+    for (const c of items) {
+      if (att && pointer) break;
+      await sleep(RATE_MS);
+      result.scanned++;
+      log(`scanning ${result.scanned}…`);
+      let d;
+      try { d = await this.http.getJson(`/backend-api/conversation/${c.id}`); } catch { continue; }
+      for (const node of Object.values(d.mapping || {})) {
+        const m = node?.message;
+        if (!m) continue;
+        const a = m.metadata?.attachments;
+        if (a?.length) { result.messagesWithAttachments++; att ||= a[0]; }
+        for (const p of m.content?.parts || []) {
+          if (p && typeof p === 'object' && p.content_type === 'image_asset_pointer') {
+            result.assetPointers++;
+            pointer ||= p;
+          }
+        }
+      }
+    }
+
+    result.attachments = att ? {
+      keys: Object.keys(att).sort(),
+      mime: att.mime_type || att.mimeType || null,
+      declaredSize: att.size ?? att.fileTokenSize ?? null,
+      hasLibraryId: 'library_file_id' in att,
+    } : null;
+
+    result.pointer = pointer ? {
+      keys: Object.keys(pointer).sort(),
+      scheme: String(pointer.asset_pointer || '').split('://')[0] || null,
+      declared: { w: pointer.width, h: pointer.height, bytes: pointer.size_bytes ?? null },
+    } : null;
+
+    // The actual question: does an id turn into bytes?
+    const id = att?.id || String(pointer?.asset_pointer || '').split('://').pop();
+    result.download = { triedId: Boolean(id) };
+    if (id) {
+      await sleep(RATE_MS);
+      try {
+        const d = await this.http.getJson(`/backend-api/files/${id}/download`);
+        result.download.endpointOk = true;
+        result.download.keys = Object.keys(d).sort();
+        const url = d.download_url || d.url || null;
+        result.download.hasUrl = Boolean(url);
+        if (url) {
+          // Origin only. The query string is the signature.
+          result.download.host = (() => { try { return new URL(url).origin; } catch { return '(unparseable)'; } })();
+          result.download.crossOrigin = result.download.host !== location.origin;
+          await sleep(RATE_MS);
+          result.download.fetched = await inspectUrl(url, { credentials: 'omit' });
+        }
+      } catch (e) {
+        result.download.endpointOk = false;
+        result.download.error = e.message;
+      }
     }
     return result;
   },
