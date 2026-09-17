@@ -246,3 +246,21 @@ details.blk .inner li { margin: 0.25em 0; }
 .welcome code { font-family: var(--mono); font-size: 0.87em; background: var(--bg-sub); padding: 0.12em 0.4em; border-radius: 4px; }
 .welcome ol { padding-left: 1.3em; }
 .welcome li { margin: 0.45em 0; }
+
+/* -------------------------------------------------------------- menus */
+.menu {
+  position: fixed; z-index: 40; min-width: 170px; padding: 4px;
+  background: var(--bg-raise); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+}
+.menu button {
+  display: block; width: 100%; text-align: left; border: 0; background: none;
+  color: var(--fg); font: inherit; font-size: 13px; padding: 5px 9px;
+  border-radius: 5px; cursor: pointer;
+}
+.menu button:hover { background: var(--accent-soft); color: var(--accent); }
+.menu button.danger:hover { background: rgba(200, 50, 50, .14); color: #c23; }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 4px 2px; }
+
+.sect > h2.drop-hot { color: var(--accent); }
+.nav-item[draggable="true"]:active { opacity: .6; }

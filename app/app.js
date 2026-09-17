@@ -11,6 +11,8 @@
    untouched.
    ========================================================================== */
 
+import * as T from '../packages/organize/folders.js';
+
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, cls, txt) => {
   const n = document.createElement(t);
@@ -111,6 +113,25 @@ const S = {
   view: { kind: 'all', id: null },
   sel: new Set(),
   branchPick: new Map(),
+  collapsed: new Set(),  // folder ids; view state, so localStorage not IndexedDB
+  subfolders: true,      // does a folder view include the folders beneath it
+};
+
+/* Per-device view state. Deliberately not in the store: it is about this
+   screen, not about the library, and it must not travel with an export. */
+const PREFS = {
+  load() {
+    try {
+      S.collapsed = new Set(JSON.parse(localStorage.getItem('organizer.collapsed') || '[]'));
+      S.subfolders = localStorage.getItem('organizer.subfolders') !== '0';
+    } catch { /* private mode, or storage off — defaults are fine */ }
+  },
+  save() {
+    try {
+      localStorage.setItem('organizer.collapsed', JSON.stringify([...S.collapsed]));
+      localStorage.setItem('organizer.subfolders', S.subfolders ? '1' : '0');
+    } catch {}
+  },
 };
 
 const metaOf = (id) =>
@@ -222,7 +243,9 @@ function inView(c) {
     case 'starred': return m.starred && !m.archived;
     case 'archived': return m.archived;
     case 'untagged': return !m.folderId && !m.tags.length && !m.archived;
-    case 'folder': return m.folderId === S.view.id && !m.archived;
+    case 'folder':
+      if (m.archived || !m.folderId) return false;
+      return S.subfolders ? subtree(S.view.id).has(m.folderId) : m.folderId === S.view.id;
     case 'tag': return m.tags.includes(S.view.id) && !m.archived;
     default: return !m.archived;
   }
@@ -391,8 +414,24 @@ function mainPath(conv) {
 
 /* -------------------------------------------------------------------- nav */
 
-const folderChildren = (pid) => S.folders.filter((f) => f.parentId === pid)
-  .sort((a, b) => a.name.localeCompare(b.name));
+/* Bound to the loaded tree; the logic itself lives in packages/organize. */
+const folderById = (id) => T.byId(S.folders, id);
+const folderChildren = (pid) => T.childrenOf(S.folders, pid);
+const subtree = (id) => T.subtree(S.folders, id);
+const folderPath = (id) => T.pathOf(S.folders, id);
+const folderList = () => T.flatten(S.folders);
+const canMove = (id, toId) => T.canMove(S.folders, id, toId);
+
+/**
+ * A parentId pointing at a folder that no longer exists makes its whole branch
+ * unreachable — nothing walks to it, so it disappears from the tree while
+ * staying in the store. Re-root those instead of leaving them invisible.
+ */
+async function repairFolders() {
+  const lost = T.orphans(S.folders);
+  for (const f of lost) f.parentId = null;
+  if (lost.length) await STORE.put('folders', lost);
+}
 
 function counts() {
   const c = { all: 0, starred: 0, archived: 0, untagged: 0, folder: new Map(), tag: new Map() };
@@ -405,10 +444,140 @@ function counts() {
     if (m.folderId) c.folder.set(m.folderId, (c.folder.get(m.folderId) || 0) + 1);
     for (const t of m.tags) c.tag.set(t, (c.tag.get(t) || 0) + 1);
   }
+  // A folder whose conversations all live in its subfolders would otherwise
+  // read as empty, which is just wrong.
+  c.folderAll = T.rollUp(S.folders, c.folder);
   return c;
 }
 
-function navItem({ ico, label, n, active, onClick, onDropIds, title }) {
+/* ------------------------------------------------------------ folder edits */
+
+function toggleFolder(id) {
+  if (S.collapsed.has(id)) S.collapsed.delete(id); else S.collapsed.add(id);
+  PREFS.save();
+  renderNav();
+}
+
+/** Open every ancestor, so selecting a folder can never scroll to nothing. */
+function revealFolder(id) {
+  for (let f = folderById(id), i = 0; f && f.parentId && i < 64; f = folderById(f.parentId), i++) {
+    S.collapsed.delete(f.parentId);
+  }
+  PREFS.save();
+}
+
+async function newFolder(parentId = null) {
+  const name = prompt(parentId ? `New folder inside "${folderPath(parentId)}"` : 'Folder name');
+  if (!name?.trim()) return;
+  const f = { id: uid(), name: name.trim(), parentId };
+  S.folders.push(f);
+  if (parentId) { S.collapsed.delete(parentId); PREFS.save(); }
+  await STORE.put('folders', [f]);
+  renderAll();
+}
+
+async function renameFolder(f) {
+  const name = prompt('Rename folder', f.name);
+  if (!name?.trim() || name.trim() === f.name) return;
+  f.name = name.trim();
+  await STORE.put('folders', [f]);
+  renderAll();
+}
+
+async function moveFolder(id, toId) {
+  const f = folderById(id);
+  if (!f || !canMove(id, toId) || f.parentId === (toId || null)) return;
+  f.parentId = toId || null;
+  if (toId) { S.collapsed.delete(toId); PREFS.save(); }
+  await STORE.put('folders', [f]);
+  renderAll();
+}
+
+/**
+ * Children are reparented rather than dropped. Deleting a folder should lose
+ * one folder, not a branch — and orphans would vanish silently.
+ */
+async function deleteFolder(f) {
+  const kids = folderChildren(f.id);
+  const ids = S.convs.filter((x) => metaOf(x.id).folderId === f.id).map((x) => x.id);
+  const up = f.parentId ? `"${folderPath(f.parentId)}"` : 'the top level';
+  const lines = [`Delete the folder "${f.name}"?`, ''];
+  if (kids.length) {
+    lines.push(kids.length > 1
+      ? `Its ${kids.length} subfolders move up to ${up}.`
+      : `Its subfolder "${kids[0].name}" moves up to ${up}.`);
+  }
+  if (ids.length) {
+    lines.push(ids.length > 1
+      ? `${ids.length} conversations become unfiled. Nothing leaves the library.`
+      : `1 conversation becomes unfiled. Nothing leaves the library.`);
+  }
+  if (!confirm(lines.join('\n'))) return;
+
+  const lifted = T.reparentOnDelete(S.folders, f.id);
+  for (const k of lifted) Object.assign(folderById(k.id), k);
+  await STORE.put('folders', lifted);
+  if (ids.length) await setMeta(ids, { folderId: null });
+  S.folders = S.folders.filter((x) => x.id !== f.id);
+  await STORE.del('folders', [f.id]);
+  if (S.view.kind === 'folder' && S.view.id === f.id) S.view = { kind: 'all', id: null };
+  renderAll();
+}
+
+const DT_IDS = 'application/x-organizer-ids';
+const DT_FOLDER = 'application/x-organizer-folder';
+
+/** A small context menu. Items are {label, run, danger} or the string '-'. */
+function menu(items, x, y) {
+  document.querySelector('.menu')?.remove();
+  const m = el('div', 'menu');
+  m.style.left = `${x}px`;
+  m.style.top = `${y}px`;
+  for (const it of items) {
+    if (it === '-') { m.append(el('hr')); continue; }
+    const b = el('button', it.danger ? 'danger' : null, it.label);
+    b.onclick = () => { m.remove(); it.run(); };
+    m.append(b);
+  }
+  document.body.append(m);
+
+  const r = m.getBoundingClientRect();
+  if (r.right > innerWidth) m.style.left = `${Math.max(4, innerWidth - r.width - 4)}px`;
+  if (r.bottom > innerHeight) m.style.top = `${Math.max(4, innerHeight - r.height - 4)}px`;
+
+  const close = (e) => {
+    if (m.contains(e.target)) return;
+    m.remove();
+    document.removeEventListener('mousedown', close);
+  };
+  setTimeout(() => document.addEventListener('mousedown', close));
+}
+
+/** Accept a drop of conversations, of a folder, or of both. */
+function dropTarget(node, { onDropIds, onDropFolder }) {
+  // dragover can read types but never data, so the decision is made on type.
+  const kind = (dt) =>
+    onDropIds && dt.types.includes(DT_IDS) ? 'ids'
+      : onDropFolder && dt.types.includes(DT_FOLDER) ? 'folder'
+        : null;
+  node.addEventListener('dragover', (e) => {
+    if (!kind(e.dataTransfer)) return;
+    e.preventDefault();
+    node.classList.add('drop-hot');
+  });
+  node.addEventListener('dragleave', () => node.classList.remove('drop-hot'));
+  node.addEventListener('drop', (e) => {
+    node.classList.remove('drop-hot');
+    const k = kind(e.dataTransfer);
+    if (!k) return;
+    e.preventDefault();
+    if (k === 'ids') onDropIds(JSON.parse(e.dataTransfer.getData(DT_IDS)));
+    else onDropFolder(e.dataTransfer.getData(DT_FOLDER));
+  });
+  return node;
+}
+
+function navItem({ ico, label, n, active, onClick, onDropIds, onDropFolder, dragFolderId, title }) {
   const b = el('button', 'nav-item');
   b.setAttribute('aria-current', String(!!active));
   if (title) b.title = title;
@@ -417,22 +586,14 @@ function navItem({ ico, label, n, active, onClick, onDropIds, title }) {
   if (n != null) b.append(el('span', 'n', String(n)));
   b.onclick = onClick;
 
-  // Dragging conversations onto a folder files them.
-  if (onDropIds) {
-    b.addEventListener('dragover', (e) => {
-      if (!e.dataTransfer.types.includes('application/x-organizer-ids')) return;
-      e.preventDefault();
-      b.classList.add('drop-hot');
-    });
-    b.addEventListener('dragleave', () => b.classList.remove('drop-hot'));
-    b.addEventListener('drop', (e) => {
-      b.classList.remove('drop-hot');
-      const raw = e.dataTransfer.getData('application/x-organizer-ids');
-      if (!raw) return;
-      e.preventDefault();
-      onDropIds(JSON.parse(raw));
+  if (dragFolderId) {
+    b.draggable = true;
+    b.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData(DT_FOLDER, dragFolderId);
+      e.dataTransfer.effectAllowed = 'move';
     });
   }
+  if (onDropIds || onDropFolder) dropTarget(b, { onDropIds, onDropFolder });
   return b;
 }
 
@@ -457,50 +618,56 @@ function renderNav() {
   // --- folders ---------------------------------------------------------
   const fs = el('div', 'sect');
   const fh = el('h2', null, 'Folders');
+  fh.title = 'Drop a folder here to move it back to the top level';
   const addF = el('button', 'add', '+');
   addF.title = 'New folder';
-  addF.onclick = async (e) => {
-    e.stopPropagation();
-    const name = prompt('Folder name');
-    if (!name?.trim()) return;
-    const f = { id: uid(), name: name.trim(), parentId: null };
-    S.folders.push(f);
-    await STORE.put('folders', [f]);
-    renderAll();
-  };
+  addF.onclick = (e) => { e.stopPropagation(); newFolder(null); };
   fh.append(addF);
+  dropTarget(fh, { onDropFolder: (id) => moveFolder(id, null) });
   fs.append(fh);
 
   const walk = (pid, depth) => {
     for (const f of folderChildren(pid)) {
+      const kids = folderChildren(f.id);
+      const open = !S.collapsed.has(f.id);
       const item = navItem({
-        ico: '▸', label: f.name, n: c.folder.get(f.id) || 0,
+        ico: kids.length ? (open ? '▾' : '▸') : '·',
+        label: f.name,
+        n: c.folderAll.get(f.id) || 0,
         active: S.view.kind === 'folder' && S.view.id === f.id,
-        onClick: go('folder', f.id),
+        onClick: () => { revealFolder(f.id); go('folder', f.id)(); },
         onDropIds: (ids) => fileInto(ids, f.id),
-        title: 'Double-click to rename, shift-click to delete',
+        onDropFolder: (id) => moveFolder(id, f.id),
+        dragFolderId: f.id,
+        title: `${folderPath(f.id)}\nDrag to move · double-click to rename · right-click for more`,
       });
       item.style.paddingLeft = `${8 + depth * 12}px`;
-      item.ondblclick = async () => {
-        const name = prompt('Rename folder', f.name);
-        if (!name?.trim()) return;
-        f.name = name.trim();
-        await STORE.put('folders', [f]);
-        renderAll();
+
+      // The triangle toggles; the rest of the row selects. Capture, so this
+      // runs before the button's own click handler.
+      if (kids.length) {
+        item.querySelector('.ico').style.cursor = 'pointer';
+        item.addEventListener('click', (e) => {
+          if (!e.target.classList.contains('ico')) return;
+          e.stopPropagation();
+          toggleFolder(f.id);
+        }, true);
+      }
+
+      item.ondblclick = () => renameFolder(f);
+      item.oncontextmenu = (e) => {
+        e.preventDefault();
+        menu([
+          { label: 'New folder inside', run: () => newFolder(f.id) },
+          { label: 'Rename…', run: () => renameFolder(f) },
+          ...(f.parentId ? [{ label: 'Move to top level', run: () => moveFolder(f.id, null) }] : []),
+          '-',
+          { label: 'Delete…', run: () => deleteFolder(f), danger: true },
+        ], e.clientX, e.clientY);
       };
-      item.addEventListener('click', async (e) => {
-        if (!e.shiftKey) return;
-        e.stopPropagation();
-        if (!confirm(`Delete folder "${f.name}"? Conversations in it stay in the library.`)) return;
-        const ids = S.convs.filter((x) => metaOf(x.id).folderId === f.id).map((x) => x.id);
-        await setMeta(ids, { folderId: null });
-        S.folders = S.folders.filter((x) => x.id !== f.id);
-        await STORE.del('folders', [f.id]);
-        if (S.view.kind === 'folder' && S.view.id === f.id) S.view = { kind: 'all', id: null };
-        renderAll();
-      }, true);
+
       fs.append(item);
-      walk(f.id, depth + 1);
+      if (open) walk(f.id, depth + 1);
     }
   };
   walk(null, 0);
@@ -534,6 +701,7 @@ function renderNav() {
         S.query = s.q.text || '';
         S.provider = s.q.provider || null;
         S.view = s.q.view || { kind: 'all', id: null };
+        if (S.view.kind === 'folder') revealFolder(S.view.id);
         $('#q').value = S.query;
         S.sel.clear();
         renderAll();
@@ -583,7 +751,7 @@ const fmtDate = (iso) => {
 
 function scopeLabel() {
   const v = S.view;
-  if (v.kind === 'folder') return S.folders.find((f) => f.id === v.id)?.name || 'Folder';
+  if (v.kind === 'folder') return folderPath(v.id) || 'Folder';
   if (v.kind === 'tag') return `#${v.id}`;
   return { all: 'All', starred: 'Starred', archived: 'Archived', untagged: 'Unfiled' }[v.kind] || 'All';
 }
@@ -606,7 +774,7 @@ function renderList() {
     row.addEventListener('dragstart', (e) => {
       // Dragging an unselected row drags just that one.
       const ids = S.sel.has(c.id) ? [...S.sel] : [c.id];
-      e.dataTransfer.setData('application/x-organizer-ids', JSON.stringify(ids));
+      e.dataTransfer.setData(DT_IDS, JSON.stringify(ids));
       e.dataTransfer.effectAllowed = 'move';
     });
 
@@ -630,8 +798,12 @@ function renderList() {
     meta.append(el('span', null, `${c.messages.length} msg`));
     if (m.starred) meta.append(el('span', null, '★'));
     if (m.folderId) {
-      const f = S.folders.find((x) => x.id === m.folderId);
-      if (f) meta.append(el('span', 'tagchip', f.name));
+      const f = folderById(m.folderId);
+      if (f) {
+        const chip = el('span', 'tagchip', f.name);
+        chip.title = folderPath(f.id);  // the name alone is ambiguous once nested
+        meta.append(chip);
+      }
     }
     for (const t of m.tags) meta.append(el('span', 'tagchip', `#${t}`));
     main.append(meta);
@@ -658,7 +830,7 @@ function renderBulk() {
   const sel = el('select');
   sel.append(new Option('Move to…', ''));
   sel.append(new Option('— no folder —', '__none'));
-  for (const f of S.folders) sel.append(new Option(f.name, f.id));
+  for (const f of folderList()) sel.append(new Option(folderPath(f.id), f.id));
   sel.onchange = async () => {
     if (!sel.value) return;
     await fileInto(ids, sel.value === '__none' ? null : sel.value);
@@ -811,7 +983,7 @@ function renderThread() {
   const fsel = el('select');
   fsel.style.cssText = 'border:1px solid var(--line);background:var(--bg-raise);border-radius:999px;padding:3px 8px;font-size:12px';
   fsel.append(new Option('— no folder —', '__none', false, !m.folderId));
-  for (const f of S.folders) fsel.append(new Option(f.name, f.id, false, m.folderId === f.id));
+  for (const f of folderList()) fsel.append(new Option(folderPath(f.id), f.id, false, m.folderId === f.id));
   fsel.onchange = () => fileInto([conv.id], fsel.value === '__none' ? null : fsel.value);
   tools.append(fsel);
 
@@ -879,6 +1051,16 @@ function renderThread() {
 function renderFilters() {
   const f = $('#filters');
   f.textContent = '';
+
+  // Only worth showing where it can change the answer.
+  if (S.view.kind === 'folder' && folderChildren(S.view.id).length) {
+    const b = el('button', 'chip', S.subfolders ? 'with subfolders' : 'this folder only');
+    b.setAttribute('aria-pressed', String(S.subfolders));
+    b.title = 'Whether this folder also lists conversations filed beneath it';
+    b.onclick = () => { S.subfolders = !S.subfolders; PREFS.save(); renderAll(); };
+    f.append(b);
+  }
+
   if (S.providers.size < 2) return;
   const mk = (label, val) => {
     const b = el('button', 'chip', label);
@@ -920,6 +1102,7 @@ async function load() {
   S.meta = new Map(meta.map((m) => [m.convId, { tags: [], ...m }]));
   S.folders = folders;
   S.smart = smart;
+  await repairFolders();
   reindex();
   renderAll();
 }
@@ -989,6 +1172,8 @@ function wire() {
   document.addEventListener('keydown', (e) => {
     if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); }
     if (e.key === 'Escape') {
+      const m = document.querySelector('.menu');
+      if (m) { m.remove(); return; }
       $('#q').blur();
       document.body.classList.remove('reading');
       if (S.sel.size) { S.sel.clear(); renderAll(); }
@@ -1001,6 +1186,7 @@ function wire() {
   } catch {}
 }
 
+PREFS.load();
 wire();
 await loadMath();
 await STORE.open();
