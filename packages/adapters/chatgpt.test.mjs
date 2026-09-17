@@ -97,3 +97,27 @@ test('recipient still discriminates tool calls from code blocks', () => {
   assert.equal(asCall[0].type, 'tool_use');
   assert.equal(asCall[0].name, 'python');
 });
+
+test('an uploaded file on message metadata becomes a visible block', () => {
+  const [b] = chatgpt.attachments({
+    metadata: { attachments: [{ id: 'file_abc', name: 'paper.pdf', mime_type: 'application/pdf', size: 38761, library_file_id: 'lib1' }] },
+  });
+  assert.equal(b.type, 'file');
+  assert.equal(b.filename, 'paper.pdf');
+  assert.equal(b.mime, 'application/pdf');
+  assert.equal(b.srcRef, 'chatgpt-file://file_abc');
+  assert.equal(b.meta.declaredBytes, 38761);
+  assert.equal('text' in b, false, 'this provider extracts no text');
+});
+
+test('a message with no attachments contributes nothing', () => {
+  assert.deepEqual(chatgpt.attachments({}), []);
+  assert.deepEqual(chatgpt.attachments({ metadata: {} }), []);
+  assert.deepEqual(chatgpt.attachments({ metadata: { attachments: [] } }), []);
+});
+
+test('an attachment with no id still shows, with no reference to resolve', () => {
+  const [b] = chatgpt.attachments({ metadata: { attachments: [{ name: 'x.txt' }] } });
+  assert.equal(b.srcRef, null, 'no id given, and none invented');
+  assert.equal(b.filename, 'x.txt');
+});

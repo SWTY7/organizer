@@ -165,7 +165,7 @@ byte-exact archive of the original.
 
 URL shape: `/api/{org}/files/{uuid}/preview`.
 
-## 3. ChatGPT: endpoint works, and my first probe was wrong ⚠️
+## 3. ChatGPT uploads are retrievable, byte-exact ✅
 
 `GET /backend-api/files/{id}/download` answered, returning:
 
@@ -175,27 +175,63 @@ mime_type  no_auth_user_upload  status
 ```
 
 `download_url` is on **chatgpt.com itself** — same origin, not the cross-origin
-signed blob URL the plan assumed. Fetching it returned **403**, but the probe
-asked with `credentials: 'omit'`, because it was written expecting a signed URL
-that carries its own authorisation. A same-origin URL fetched without cookies is
-supposed to be refused. The 403 is the probe's, not the provider's.
+signed blob URL the plan assumed. With the session it returns the file:
 
-Fixed: the probe now tries the session first, then the bearer token, then
-anonymous, and reports the server's own refusal text so the three cases cannot
-be confused again. **Needs a re-run to close.**
+| | |
+|---|---|
+| status | 200 |
+| type | `application/pdf` |
+| bytes | **38,761** |
+| declared `size` | **38,761** |
+
+Byte-exact and complete. Unlike Claude's webp re-encode, this is the file as
+uploaded.
+
+The first run reported 403 on this same URL, and that was **the probe's fault,
+not the provider's**: it asked with `credentials: 'omit'`, having been written
+for a signed URL that carries its own authorisation. A same-origin URL fetched
+without cookies is supposed to be refused. Worth recording because the two
+outcomes are indistinguishable from the status code alone — the probe now tries
+session, then bearer token, then anonymous, and prints the server's own refusal
+text.
+
+## 3b. Generated images do NOT use that route ⚠️ open
+
+The same endpoint, given the id from an `image_asset_pointer`
+(`file_00000000250c…`), returned **403**. So an upload and a generated image are
+different kinds of asset, and only one of them is solved.
+
+The probe now tries four candidate routes against one of your own images —
+`/download`, bare, conversation-scoped, and a conversation-attachment path — and
+dumps the pointer's own `metadata` shape, which may carry the answer without
+guessing. None of those four is a known endpoint; they are measurements.
+
+Until this closes, ChatGPT image capture is a gap and uploads are not.
 
 ## 4. ChatGPT has no extracted text ❌
 
 `metadata.attachments[]` keys: `id`, `library_file_id`, `mime_type`, `name`,
-`size`. That is all. A PDF that is free on Claude is a download on ChatGPT.
+`size`. That is all. A PDF that is free on Claude is a download on ChatGPT —
+though at least on ChatGPT the download gives you the original bytes.
 
 ## 5. `asset_pointer` is not `file-service://`
 
 The scheme observed was **`sediment://`**, on a `image_asset_pointer` declaring
 476 × 685 and 30,557 bytes. Keys: `asset_pointer`, `content_type`, `fovea`,
-`height`, `metadata`, `size_bytes`, `width`.
+`height`, `metadata`, `size_bytes`, `width`. The id after the scheme is
+`file_…` with an **underscore**, not the `file-` the old pattern expected.
 
-Anything that pattern-matches `file-service://` is matching a scheme this
-account does not use. An image pointer is also a different kind of id from an
-upload's, so the probe now resolves both separately rather than assuming one
-answer covers the other.
+So two assumptions were wrong at once: the scheme, and the id separator.
+Anything matching `file-service://file-…` matches nothing in this account.
+
+## Where that leaves asset capture
+
+| | document text | original bytes |
+|---|---|---|
+| Claude, uploads | ✅ free, in the payload | ✅ `preview_url`, re-encoded to webp |
+| Claude, images | — | ✅ full resolution, 27 KB typical |
+| ChatGPT, uploads | ❌ none | ✅ byte-exact via `/download` |
+| ChatGPT, images | — | ⚠️ open, see 3b |
+
+Three of four are solved and one is a live question. Nothing here needs a
+cross-origin request, so the extension can do all of it.

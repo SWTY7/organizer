@@ -210,6 +210,26 @@ export const chatgpt = {
     }
   },
 
+  /**
+   * Uploaded files, which live on the message's metadata rather than in its
+   * content — so a conversation where you attached a PDF showed no sign of it
+   * at all until now.
+   *
+   * ChatGPT extracts no text (that is a Claude-only gift), so this is a
+   * reference: the name, the type, and the id a backfill needs. Phase 0b
+   * confirmed `/backend-api/files/{id}/download` returns those bytes exactly,
+   * with the session.
+   */
+  attachments(msg) {
+    return (msg.metadata?.attachments || []).map((a) => ({
+      type: 'file',
+      filename: a.name,
+      mime: a.mime_type || null,
+      srcRef: a.id ? `chatgpt-file://${a.id}` : null,
+      meta: { declaredBytes: a.size ?? null, libraryFileId: a.library_file_id ?? null },
+    }));
+  },
+
   async convert(d) {
     const mapping = d.mapping || {};
 
@@ -223,7 +243,7 @@ export const chatgpt = {
     for (const node of Object.values(mapping)) {
       const m = node.message;
       if (!m) continue; // the root node carries no message
-      const content = this.block(m);
+      const content = [...this.block(m), ...this.attachments(m)];
       if (!content.length) continue;
 
       messages.push({
@@ -351,7 +371,7 @@ export const chatgpt = {
         for (const p of m.content?.parts || []) {
           if (p && typeof p === 'object' && p.content_type === 'image_asset_pointer') {
             result.assetPointers++;
-            pointer ||= p;
+            if (!pointer) { pointer = p; result.pointerConv = c.id; }
           }
         }
       }
@@ -411,24 +431,38 @@ export const chatgpt = {
       }
     }
 
-    // An image pointer is a different kind of id from an upload's. If the
-    // first id came from an attachment, this is still unanswered.
+    // A generated image is a different kind of asset from an upload, and the
+    // uploads endpoint refuses its id. These are CANDIDATE routes, tried once
+    // each against one of your own images, to find which one answers — nothing
+    // here is a known endpoint, and a 403 or 404 is a result, not an error.
     if (pointerId && pointerId !== id) {
-      await sleep(RATE_MS);
-      result.pointerDownload = {};
-      try {
-        const d = await this.http.getJson(`/backend-api/files/${pointerId}/download`);
-        result.pointerDownload.endpointOk = true;
-        result.pointerDownload.keys = Object.keys(d).sort();
-        const url = d.download_url || d.url || null;
-        if (url) {
-          await sleep(RATE_MS);
-          result.pointerDownload.fetched = await this.http.inspect(url, { credentials: 'include' });
+      const conv = result.pointerConv;
+      const candidates = [
+        ['download', `/backend-api/files/${pointerId}/download`],
+        ['bare', `/backend-api/files/${pointerId}`],
+        ...(conv ? [
+          ['scoped', `/backend-api/files/${pointerId}/download?conversation_id=${conv}`],
+          ['convAttachment', `/backend-api/conversation/${conv}/attachment/${pointerId}/download`],
+        ] : []),
+      ];
+      result.pointerRoutes = {};
+      for (const [name, path] of candidates) {
+        await sleep(RATE_MS);
+        try {
+          const d = await this.http.getJson(path);
+          const url = d.download_url || d.url || null;
+          result.pointerRoutes[name] = { ok: true, keys: Object.keys(d).sort(), hasUrl: Boolean(url) };
+          if (url) {
+            await sleep(RATE_MS);
+            result.pointerRoutes[name].fetched = await this.http.inspect(url, { credentials: 'include' });
+          }
+        } catch (e) {
+          result.pointerRoutes[name] = { ok: false, error: e.message };
         }
-      } catch (e) {
-        result.pointerDownload.endpointOk = false;
-        result.pointerDownload.error = e.message;
       }
+      // Whatever the routes say, the pointer's own metadata may already carry
+      // the answer. Shape only — summarize redacts the values.
+      result.pointerMeta = summarize(pointer.metadata ?? null, 'metadata');
     }
     return result;
   },

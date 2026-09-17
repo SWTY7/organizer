@@ -106,12 +106,19 @@ import { download } from '../packages/adapters/shared.js';
       if (d.anonymous) log(`Without cookies: HTTP ${d.anonymous.status}. With the token: HTTP ${d.withToken?.status}.`);
     }
 
-    if (result.pointerDownload) {
-      const p = result.pointerDownload;
-      big(p.fetched?.ok
-        ? `Generated images are retrievable too — ${p.fetched.bytes} bytes`
-        : `Image pointers do NOT resolve the same way (${p.error || 'HTTP ' + p.fetched?.status})`,
-      p.fetched?.ok ? GOOD : WARN);
+    if (result.pointerRoutes) {
+      const hit = Object.entries(result.pointerRoutes).find(([, r]) => r.fetched?.ok);
+      if (hit) {
+        const [name, r] = hit;
+        const px = r.fetched.pixels ? `, ${r.fetched.pixels.w}×${r.fetched.pixels.h}` : '';
+        big(`GENERATED IMAGES: the "${name}" route works — ${r.fetched.bytes} bytes${px}`, GOOD);
+      } else {
+        big('GENERATED IMAGES: none of the candidate routes answered', WARN);
+        for (const [name, r] of Object.entries(result.pointerRoutes)) {
+          log(`  ${name}: ${r.ok ? `answered, url=${r.hasUrl}` : r.error}`);
+        }
+        log('The pointer\'s own metadata is in the output as "pointerMeta" — the route may be in there.');
+      }
     }
     if (result.pointer?.scheme && result.pointer.scheme !== 'file-service') {
       log(`Note: asset_pointer scheme is "${result.pointer.scheme}", not the file-service the format assumed.`);
