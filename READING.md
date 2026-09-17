@@ -44,12 +44,18 @@ Map templates below, which is why those ship first.
 
 ### 2. Manual
 
-Click any turn → **start a section here**, give it a name. Drag the divider to
-move it. Exact, and it is also how you correct source 3.
+Right-click any turn → **start a section here**, give it a name. Rename or
+remove it from the heading. Exact, and it is also how you correct source 3.
 
 Stored in `meta` as `sections: [{ startStableKey, title }]`. In `meta`, not on
 the conversation, so re-capturing the chat keeps your sections — this is what
 `stableKey` was built for.
+
+Anchoring to a key rather than an index has one visible consequence: a break
+can end up pointing at a message that is not on the path being shown, because
+the conversation was re-captured or because the break sits on a branch you are
+not following. Those are **reported and kept**, never quietly dropped. Losing
+work someone did by hand in order to keep a display tidy is the wrong trade.
 
 ### 3. Suggested
 
@@ -166,7 +172,7 @@ also where reconstructed artifacts live (see PLAN.md, Track B).
 |---|---|---|---|
 | 1 | Outline + Map ✅ | nothing | small |
 | 2 | Spine ✅ | Outline | small |
-| 3 | Sections — manual | `meta.sections` | small |
+| 3 | Sections — manual ✅ | `meta.sections` | small |
 | 4 | Columns | sections | medium |
 | 5 | Branches 2D + diff | nothing (data is there) | medium |
 | 6 | Sections — suggested | the heuristic | medium |

@@ -360,3 +360,26 @@ details.blk .inner li { margin: 0.25em 0; }
   .spine-rail { position: static; width: auto; max-height: 260px; border-right: 0;
                 border-bottom: 1px solid var(--line); margin-bottom: 14px; }
 }
+
+/* --- sections --- */
+.osection, .ssection {
+  display: flex; align-items: baseline; gap: 8px;
+  font-weight: 600; color: var(--fg-dim);
+}
+.osection {
+  margin: 20px 0 4px; padding: 0 4px 5px;
+  border-bottom: 1px solid var(--line); font-size: 13px;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.osection:first-child { margin-top: 0; }
+.ssection {
+  margin: 14px 0 4px; padding: 0 8px 3px; font-size: 11px;
+  text-transform: uppercase; letter-spacing: .05em;
+}
+.spine-rail > .ssection:first-of-type { margin-top: 4px; }
+.osection .stitle, .ssection .stitle { flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.osection .scount, .ssection .scount {
+  font-weight: 400; color: var(--fg-faint); font-variant-numeric: tabular-nums;
+}
+.ssection[hidden] { display: none; }

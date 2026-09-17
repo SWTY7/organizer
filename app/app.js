@@ -13,6 +13,7 @@
 
 import * as T from '../packages/organize/folders.js';
 import * as O from '../packages/organize/outline.js';
+import * as SEC from '../packages/organize/sections.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const el = (t, cls, txt) => {
@@ -143,7 +144,7 @@ const PREFS = {
 };
 
 const metaOf = (id) =>
-  S.meta.get(id) || { convId: id, folderId: null, tags: [], starred: false, archived: false };
+  S.meta.get(id) || { convId: id, folderId: null, tags: [], starred: false, archived: false, sections: [] };
 
 async function setMeta(ids, patch) {
   const rows = ids.map((id) => {
@@ -1051,7 +1052,7 @@ function renderThread() {
 
   S.anchor = new Map();
   const body = el('div', 'thread-body');
-  (TEMPLATES[S.template] || TEMPLATES.transcript).render(body, path, kids);
+  (TEMPLATES[S.template] || TEMPLATES.transcript).render(body, path, kids, conv);
   wrap.append(body);
 
   const shell = el('div', 'thread-wrap');
@@ -1114,6 +1115,79 @@ function turnSummary(t, width) {
   return mid;
 }
 
+/* --------------------------------------------------------------- sections */
+
+const sectionsOf = (convId) => metaOf(convId).sections || [];
+
+async function editSections(convId, fn) {
+  await setMeta([convId], (m) => ({ sections: fn(m.sections || []) }));
+  renderThread();
+}
+
+/** The right-click menu a turn offers for marking where a topic starts. */
+function sectionMenu(convId, key, x, y) {
+  const here = SEC.breakAt(sectionsOf(convId), key);
+  const items = here
+    ? [
+      { label: 'Rename section…',
+        run: () => {
+          const t = prompt('Section name', here.title);
+          if (t?.trim()) editSections(convId, (s) => SEC.setBreak(s, key, t.trim()));
+        } },
+      { label: 'Remove this section break', run: () => editSections(convId, (s) => SEC.clearBreak(s, key)) },
+    ]
+    : [
+      { label: 'Start a section here',
+        run: () => {
+          const t = prompt('Name this section');
+          if (t?.trim()) editSections(convId, (s) => SEC.setBreak(s, key, t.trim()));
+        } },
+    ];
+  menu(items, x, y);
+}
+
+/** A section heading, renameable in place. */
+function sectionHead(convId, sec, cls) {
+  const h = el('div', cls);
+  h.append(el('span', 'stitle', sec.title || 'Start of the conversation'));
+  h.append(el('span', 'scount', `${sec.turns.length}`));
+  if (sec.startKey) {
+    h.title = 'Double-click to rename · right-click to remove';
+    h.ondblclick = () => {
+      const t = prompt('Section name', sec.title);
+      if (t?.trim()) editSections(convId, (s) => SEC.setBreak(s, sec.startKey, t.trim()));
+    };
+    h.oncontextmenu = (e) => { e.preventDefault(); sectionMenu(convId, sec.startKey, e.clientX, e.clientY); };
+  }
+  return h;
+}
+
+/**
+ * Breaks that no longer land on a turn — after a re-capture, or because they
+ * sit on a branch this path does not follow. Saying so beats quietly losing
+ * work someone did by hand.
+ */
+function orphanBanner(convId, groups, sections) {
+  const lost = SEC.orphaned(groups.flatMap((g) => g.turns), sections);
+  if (!lost.length) return null;
+  const many = lost.length > 1;
+  const b = el('div', 'banner',
+    `${lost.length} section break${many ? 's are' : ' is'} not on this path — ` +
+    `${lost.map((s) => `"${s.title}"`).join(', ')}. ` +
+    `${many ? 'They are' : 'It is'} kept, in case the message comes back on another branch ` +
+    `or a re-capture.`);
+  const drop = el('button', 'icon-btn', many ? 'Discard them' : 'Discard it');
+  drop.onclick = () => {
+    if (!confirm(many
+      ? `Discard ${lost.length} section breaks that no longer match anything?`
+      : `Discard the section break "${lost[0].title}"? It no longer matches anything.`)) return;
+    const dead = new Set(lost.map((s) => s.startStableKey));
+    editSections(convId, (s) => s.filter((x) => !dead.has(x.startStableKey)));
+  };
+  b.append(' ', drop);
+  return b;
+}
+
 /** Everything a turn's summary can be matched against, for the rail filter. */
 const turnHaystack = (t) =>
   [t.user, ...t.replies].filter(Boolean)
@@ -1135,12 +1209,16 @@ const TEMPLATES = {
   outline: {
     label: 'Outline',
     hint: 'One line per exchange — click to open it',
-    render(into, path, kids) {
-      const groups = O.turns(path);
+    render(into, path, kids, conv) {
+      const turns = O.turns(path);
+      const sections = sectionsOf(conv.id);
+      const groups = SEC.group(turns, sections);
 
       const bar = el('div', 'outline-bar');
-      const n = groups.length;
-      bar.append(el('span', null, `${n} exchange${n > 1 ? 's' : ''}`));
+      const n = turns.length;
+      bar.append(el('span', null,
+        `${n} exchange${n > 1 ? 's' : ''}` +
+        (groups.length > 1 ? ` · ${groups.length} sections` : '')));
       const all = el('button', 'icon-btn', 'Expand all');
       all.onclick = () => {
         const open = all.textContent === 'Expand all';
@@ -1162,24 +1240,34 @@ const TEMPLATES = {
         detail.hidden = !open;
       };
 
-      for (const [i, t] of groups.entries()) {
-        const msgs = [t.user, ...t.replies].filter(Boolean);
-        const row = el('div', 'oturn');
-        row._msgs = msgs;
-        for (const msg of msgs) S.anchor.set(msg.id, row);
+      const banner = orphanBanner(conv.id, groups, sections);
+      if (banner) into.append(banner);
 
-        const head = el('button', 'ohead');
-        head.append(el('span', 'onum', String(i + 1)));
+      let i = 0;
+      for (const sec of groups) {
+        if (groups.length > 1) into.append(sectionHead(conv.id, sec, 'osection'));
 
-        head.append(turnSummary(t, 160));
-        head.append(el('span', 'ocaret', '▸'));
+        for (const t of sec.turns) {
+          const msgs = [t.user, ...t.replies].filter(Boolean);
+          const key = SEC.turnKey(t);
+          const row = el('div', 'oturn');
+          row._msgs = msgs;
+          for (const msg of msgs) S.anchor.set(msg.id, row);
 
-        const detail = el('div', 'odetail');
-        detail.hidden = true;
+          const head = el('button', 'ohead');
+          head.append(el('span', 'onum', String(++i)));
+          head.append(turnSummary(t, 160));
+          head.append(el('span', 'ocaret', '▸'));
 
-        head.onclick = () => setOpen(row, !row.classList.contains('open'));
-        row.append(head, detail);
-        into.append(row);
+          const detail = el('div', 'odetail');
+          detail.hidden = true;
+
+          head.onclick = () => setOpen(row, !row.classList.contains('open'));
+          head.oncontextmenu = (e) => { e.preventDefault(); sectionMenu(conv.id, key, e.clientX, e.clientY); };
+          head.title = 'Right-click to start a section here';
+          row.append(head, detail);
+          into.append(row);
+        }
       }
     },
   },
@@ -1187,8 +1275,10 @@ const TEMPLATES = {
   spine: {
     label: 'Spine',
     hint: 'A list of exchanges on the left, one of them in full on the right',
-    render(into, path, kids) {
+    render(into, path, kids, conv) {
       const groups = O.turns(path);
+      const sections = sectionsOf(conv.id);
+      const secGroups = SEC.group(groups, sections);
       into.classList.add('spine');
 
       const rail = el('div', 'spine-rail');
@@ -1216,22 +1306,38 @@ const TEMPLATES = {
         $('#main').scrollTop = 0;
       };
 
-      for (const [i, t] of groups.entries()) {
-        const row = el('button', 'srow');
-        row.append(el('span', 'onum', String(i + 1)));
-        row.append(turnSummary(t, 90));
-        row.onclick = () => show(i);
-        // The ribbon jumps by selecting, not by scrolling — in this template
-        // the message it points at may not be on screen at all.
-        row._select = () => show(i);
-        for (const msg of [t.user, ...t.replies].filter(Boolean)) S.anchor.set(msg.id, row);
-        rows.push(row);
-        rail.append(row);
+      const heads = [];
+      let i = 0;
+      for (const sec of secGroups) {
+        const head = secGroups.length > 1 ? sectionHead(conv.id, sec, 'ssection') : null;
+        if (head) rail.append(head);
+        const from = i;
+
+        for (const t of sec.turns) {
+          const n = i++;
+          const key = SEC.turnKey(t);
+          const row = el('button', 'srow');
+          row.append(el('span', 'onum', String(n + 1)));
+          row.append(turnSummary(t, 90));
+          row.onclick = () => show(n);
+          row.oncontextmenu = (e) => { e.preventDefault(); sectionMenu(conv.id, key, e.clientX, e.clientY); };
+          // The ribbon jumps by selecting, not by scrolling — in this template
+          // the message it points at may not be on screen at all.
+          row._select = () => show(n);
+          for (const msg of [t.user, ...t.replies].filter(Boolean)) S.anchor.set(msg.id, row);
+          rows.push(row);
+          rail.append(row);
+        }
+        if (head) heads.push({ head, from, to: i });
       }
 
+      // A heading with nothing left under it is just a lie about the filter.
       filter.oninput = () => {
         const q = filter.value.trim().toLowerCase();
-        rows.forEach((r, i) => { r.hidden = Boolean(q) && !hay[i].includes(q); });
+        rows.forEach((r, n) => { r.hidden = Boolean(q) && !hay[n].includes(q); });
+        for (const h of heads) {
+          h.head.hidden = rows.slice(h.from, h.to).every((r) => r.hidden);
+        }
       };
 
       into.append(rail, pane);
@@ -1345,7 +1451,7 @@ async function load() {
     STORES.map((s) => STORE.all(s)));
   S.convs = convs.sort((a, b) =>
     String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
-  S.meta = new Map(meta.map((m) => [m.convId, { tags: [], ...m }]));
+  S.meta = new Map(meta.map((m) => [m.convId, { tags: [], sections: [], ...m }]));
   S.folders = folders;
   S.smart = smart;
   await repairFolders();
