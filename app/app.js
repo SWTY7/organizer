@@ -119,6 +119,8 @@ const S = {
   template: 'transcript',
   anchor: new Map(),     // message id -> the element showing it, for the ribbon
   bars: [],
+  spineAt: 0,            // which exchange the Spine template has open
+  spineMove: null,
 };
 
 /* Per-device view state. Deliberately not in the store: it is about this
@@ -1091,6 +1093,32 @@ function renderMessage(msg, kids) {
   return box;
 }
 
+/**
+ * The one-line stand-in for a whole exchange: your question, what the reply
+ * was about, and what is in it. Shared by Outline and Spine, so a turn reads
+ * the same wherever you meet it.
+ */
+function turnSummary(t, width) {
+  const mid = el('span', 'omid');
+  const q = t.user ? O.clip(O.plain(O.gist([t.user], 400) || '(no text)'), width) : '(continues)';
+  mid.append(el('span', 'oq', q));
+
+  // A reply the model gave sections to is better summarised by those sections
+  // than by its opening sentence.
+  const hs = O.headings(t.replies, 4);
+  const g = hs.length > 1 ? hs.map((h) => h.text).join('  ·  ') : O.gist(t.replies);
+  if (g) mid.append(el('span', `og${hs.length > 1 ? ' sections' : ''}`, g));
+
+  const bits = O.badges(O.stats(t.replies));
+  if (bits.length) mid.append(el('span', 'obadges', bits.join(' · ')));
+  return mid;
+}
+
+/** Everything a turn's summary can be matched against, for the rail filter. */
+const turnHaystack = (t) =>
+  [t.user, ...t.replies].filter(Boolean)
+    .flatMap((m) => (m.content || []).map(blockText)).join(' ').toLowerCase();
+
 const TEMPLATES = {
   transcript: {
     label: 'Transcript',
@@ -1143,18 +1171,7 @@ const TEMPLATES = {
         const head = el('button', 'ohead');
         head.append(el('span', 'onum', String(i + 1)));
 
-        const mid = el('span', 'omid');
-        const q = t.user ? O.clip(O.plain(O.gist([t.user], 400) || '(no text)'), 160) : '(continues)';
-        mid.append(el('span', 'oq', q));
-        // A reply the model gave sections to is better summarised by those
-        // sections than by its opening sentence.
-        const hs = O.headings(t.replies, 4);
-        const g = hs.length > 1 ? hs.map((h) => h.text).join('  ·  ') : O.gist(t.replies);
-        if (g) mid.append(el('span', `og${hs.length > 1 ? ' sections' : ''}`, g));
-
-        const bits = O.badges(O.stats(t.replies));
-        if (bits.length) mid.append(el('span', 'obadges', bits.join(' · ')));
-        head.append(mid);
+        head.append(turnSummary(t, 160));
         head.append(el('span', 'ocaret', '▸'));
 
         const detail = el('div', 'odetail');
@@ -1164,6 +1181,62 @@ const TEMPLATES = {
         row.append(head, detail);
         into.append(row);
       }
+    },
+  },
+
+  spine: {
+    label: 'Spine',
+    hint: 'A list of exchanges on the left, one of them in full on the right',
+    render(into, path, kids) {
+      const groups = O.turns(path);
+      into.classList.add('spine');
+
+      const rail = el('div', 'spine-rail');
+      const pane = el('div', 'spine-pane');
+
+      const filter = el('input', 'spine-filter');
+      filter.type = 'search';
+      filter.placeholder = `Filter ${groups.length} exchange${groups.length > 1 ? 's' : ''}…`;
+      rail.append(filter);
+
+      const rows = [];
+      const hay = groups.map(turnHaystack);
+
+      // Rebuild only the pane on selection. Rebuilding the rail too would make
+      // it jump under the cursor every time you moved.
+      const show = (i) => {
+        if (i < 0 || i >= groups.length) return;
+        S.spineAt = i;
+        pane.textContent = '';
+        for (const msg of [groups[i].user, ...groups[i].replies].filter(Boolean)) {
+          pane.append(renderMessage(msg, kids));
+        }
+        rows.forEach((r, n) => r.setAttribute('aria-current', String(n === i)));
+        rows[i]?.scrollIntoView({ block: 'nearest' });
+        $('#main').scrollTop = 0;
+      };
+
+      for (const [i, t] of groups.entries()) {
+        const row = el('button', 'srow');
+        row.append(el('span', 'onum', String(i + 1)));
+        row.append(turnSummary(t, 90));
+        row.onclick = () => show(i);
+        // The ribbon jumps by selecting, not by scrolling — in this template
+        // the message it points at may not be on screen at all.
+        row._select = () => show(i);
+        for (const msg of [t.user, ...t.replies].filter(Boolean)) S.anchor.set(msg.id, row);
+        rows.push(row);
+        rail.append(row);
+      }
+
+      filter.oninput = () => {
+        const q = filter.value.trim().toLowerCase();
+        rows.forEach((r, i) => { r.hidden = Boolean(q) && !hay[i].includes(q); });
+      };
+
+      into.append(rail, pane);
+      show(Math.min(S.spineAt || 0, groups.length - 1));
+      S.spineMove = (d) => show(S.spineAt + d);
     },
   },
 };
@@ -1191,8 +1264,10 @@ function renderRibbon(path) {
     b.onclick = () => {
       const node = S.anchor.get(bar.id);
       if (!node) return;
-      // In Outline the target is a collapsed row; open it, or the jump lands
-      // on a line that does not contain what you clicked towards.
+      // Templates reach a message differently. Spine selects it; Outline has
+      // to open the row first, or the jump lands on a collapsed line that does
+      // not contain what you aimed at.
+      if (node._select) { node._select(); return; }
       if (node.classList.contains('oturn') && !node.classList.contains('open')) {
         node.querySelector('.ohead').click();
       }
@@ -1245,6 +1320,7 @@ function renderFilters() {
 function openConv(id) {
   S.openId = id;
   S.branchPick.clear();
+  S.spineAt = 0;  // a different conversation starts at its beginning
   document.body.classList.add('reading');
   renderList();
   renderThread();
@@ -1347,7 +1423,16 @@ function wire() {
   };
 
   document.addEventListener('keydown', (e) => {
-    if (e.key === '/' && document.activeElement !== $('#q')) { e.preventDefault(); $('#q').focus(); }
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
+
+    // j/k walk the Spine, the way a list of things you are reading should.
+    if (!typing && S.template === 'spine' && S.spineMove && (e.key === 'j' || e.key === 'k')) {
+      e.preventDefault();
+      S.spineMove(e.key === 'j' ? 1 : -1);
+      return;
+    }
+
+    if (e.key === '/' && !typing) { e.preventDefault(); $('#q').focus(); }
     if (e.key === 'Escape') {
       const m = document.querySelector('.menu');
       if (m) { m.remove(); return; }

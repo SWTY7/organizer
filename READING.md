@@ -110,8 +110,15 @@ conversation into something you can aim at. Ships with Outline.
 ### 4. Spine — two panes
 
 Outline on the left as a fixed rail, the selected turn in full on the right.
-Reads like documentation rather than like chat. `j` / `k` move, `/` searches
-within the conversation. This is the one for long technical chats you return to.
+Reads like documentation rather than like chat. `j` / `k` move. This is the one
+for long technical chats you return to.
+
+The rail has a filter box rather than the in-conversation search first planned
+here. `/` is already the library search, and a second meaning for the same key
+depending on which template is open is exactly the kind of cleverness that
+makes an app hard to use. Filtering the rail answers the same question —
+*where in this chat did I talk about X* — by hiding the exchanges that do not
+match, which is both simpler to build and simpler to explain.
 
 ### 5. Columns — the two-dimensional one
 
@@ -158,7 +165,7 @@ also where reconstructed artifacts live (see PLAN.md, Track B).
 | | template | needs | cost |
 |---|---|---|---|
 | 1 | Outline + Map ✅ | nothing | small |
-| 2 | Spine | Outline | small |
+| 2 | Spine ✅ | Outline | small |
 | 3 | Sections — manual | `meta.sections` | small |
 | 4 | Columns | sections | medium |
 | 5 | Branches 2D + diff | nothing (data is there) | medium |
