@@ -168,6 +168,22 @@ exchange there opens the matching card and scrolls it into view on both axes,
 since in a 2D board "scroll it into view" means centring the right column too,
 not just the right row.
 
+**Cards can be moved** — dragged by the small strip at their top, or with
+"move to another section" from the same strip's ⋯, in case you would rather
+file a reply under a different topic than the one it naturally fell into.
+This is deliberately narrower than free rearrangement, and the reason is the
+same one that motivated asking for it: a board you can freely reorder is a
+board where "where is card 7?" stops having one answer. So a move only ever
+reassigns which **column** a card sits in; it never reorders cards within a
+column, and a card's number — its true position in the actual conversation —
+never changes, wherever you file it. A moved card carries a small "From
+Physics" label back to where it started. Nothing here touches the underlying
+conversation, and nothing here reaches Transcript, Outline, Focus or the
+inspector: those four all read the real, chronological grouping — restated
+in `applyMoves`'s own doc comment, because it is the kind of thing a later
+change could quietly get wrong. Columns is the one deliberately spatial view;
+moving a card only changes what that one view shows you.
+
 ### 6. Branches — the honest 2D
 
 For conversations with real forks. The main path runs down the page; each

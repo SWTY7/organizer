@@ -1,12 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { turnKey, group, orphaned, setBreak, clearBreak, breakAt } from './sections.js';
+import { turnKey, group, orphaned, setBreak, clearBreak, breakAt, applyMoves, BEGIN } from './sections.js';
 
 const turn = (key, role = 'user') => ({
   user: role === 'user' ? { stableKey: key } : null,
   replies: role === 'user' ? [] : [{ stableKey: key }],
 });
 const T = ['a', 'b', 'c', 'd'].map((k) => turn(k));
+// a, b, c, d, e, f — with breaks at c and e, so three sections of two each.
+const SIX = ['a', 'b', 'c', 'd', 'e', 'f'].map((k) => turn(k));
+const SECS3 = [{ startStableKey: 'c', title: 'B' }, { startStableKey: 'e', title: 'C' }];
 
 test('a turn is identified by the message that opens it', () => {
   assert.equal(turnKey(turn('q1')), 'q1');
@@ -79,4 +82,52 @@ test('breakAt finds the break on a turn, and null elsewhere', () => {
   assert.equal(breakAt(s, 'b').title, 'B');
   assert.equal(breakAt(s, 'a'), null);
   assert.equal(breakAt(s, null), null);
+});
+
+/* ---------------------------------------------------------------- moves */
+
+const namesOf = (groups) => groups.map((g) => g.turns.map((t) => turnKey(t)));
+
+test('no moves is exactly group()', () => {
+  assert.deepEqual(namesOf(applyMoves(SIX, SECS3, {})), namesOf(group(SIX, SECS3)));
+  assert.deepEqual(namesOf(applyMoves(SIX, SECS3)), namesOf(group(SIX, SECS3)), 'undefined moves too');
+});
+
+test('a card moved later relocates, keeping chronological order in its new home', () => {
+  // 'a' (naturally in section A, with 'b') moves into section C (with 'e','f').
+  const g = applyMoves(SIX, SECS3, { a: 'e' });
+  assert.deepEqual(namesOf(g), [['b'], ['c', 'd'], ['a', 'e', 'f']],
+    'a sorts by true chronological position among its new section-mates, not by when it was dropped');
+});
+
+test('a card moved earlier relocates the same way', () => {
+  const g = applyMoves(SIX, SECS3, { f: 'c' });
+  assert.deepEqual(namesOf(g), [['a', 'b'], ['c', 'd', 'f'], ['e']]);
+});
+
+test('moving to BEGIN targets the opening section', () => {
+  const g = applyMoves(SIX, SECS3, { e: BEGIN });
+  assert.deepEqual(namesOf(g), [['a', 'b', 'e'], ['c', 'd'], ['f']]);
+});
+
+test('a move to a section that no longer exists is silently ignored', () => {
+  const g = applyMoves(SIX, SECS3, { a: 'nonexistent-section-key' });
+  assert.deepEqual(namesOf(g), namesOf(group(SIX, SECS3)), 'the card stays exactly where group() would put it');
+});
+
+test('a move to a card’s own natural section is a no-op, not a duplicate', () => {
+  const g = applyMoves(SIX, SECS3, { a: BEGIN });
+  assert.deepEqual(namesOf(g), namesOf(group(SIX, SECS3)));
+});
+
+test('several cards can move into the same section at once', () => {
+  const g = applyMoves(SIX, SECS3, { a: 'e', d: 'e' });
+  assert.deepEqual(namesOf(g), [['b'], ['c'], ['a', 'd', 'e', 'f']]);
+});
+
+test('moves never change which turns exist or their content, only their grouping', () => {
+  const g = applyMoves(SIX, SECS3, { a: 'e', f: BEGIN });
+  const all = g.flatMap((x) => x.turns);
+  assert.equal(all.length, SIX.length);
+  assert.deepEqual(new Set(all.map(turnKey)), new Set(SIX.map(turnKey)));
 });

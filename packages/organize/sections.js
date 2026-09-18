@@ -59,3 +59,50 @@ export const clearBreak = (sections, key) => sections.filter((s) => s.startStabl
 /** Does a turn start a section? Returns the break, so callers can read its title. */
 export const breakAt = (sections, key) =>
   (key ? sections.find((s) => s.startStableKey === key) : null) || null;
+
+/** Sentinel for the section with no break of its own — the opening one. */
+export const BEGIN = '__begin';
+
+/**
+ * Section membership, with manual card moves layered on top of `group()`.
+ *
+ * This is read by the Columns board only. Every other view — Transcript,
+ * Outline, Focus, the inspector's list — shows turns in true chronological
+ * order, and a move must never reach them: relocating a turn into a section
+ * that sits earlier in the conversation would make those views render it out
+ * of sequence, which is not a display quirk, it is the wrong conversation.
+ * Columns is the one view that is spatial rather than sequential, so it is
+ * the only one that reads this.
+ *
+ * `moves` maps a turn's key to the `startKey` of the section it was dragged
+ * into (`BEGIN` for the opening one). A target that no longer exists — its
+ * section was deleted after the move — is treated as no move at all: the
+ * turn quietly stays where `group()` would naturally put it, rather than the
+ * render throwing or the card vanishing.
+ *
+ * A moved turn keeps its place in chronological order *within* its new
+ * section — moving is a change of section, never a change of reading order.
+ */
+export function applyMoves(turns, sections, moves) {
+  const base = group(turns, sections);
+  if (!moves || !Object.keys(moves).length) return base;
+
+  const byKey = new Map(base.map((g) => [g.startKey ?? BEGIN, g]));
+  const index = new Map(turns.map((t, i) => [t, i]));
+  const incoming = new Map(); // target startKey -> turns arriving, unsorted
+
+  for (const g of base) {
+    g.turns = g.turns.filter((t) => {
+      const key = turnKey(t);
+      const target = key ? moves[key] : undefined;
+      if (target == null || target === (g.startKey ?? BEGIN) || !byKey.has(target)) return true;
+      (incoming.get(target) ?? incoming.set(target, []).get(target)).push(t);
+      return false;
+    });
+  }
+  for (const [target, arrived] of incoming) {
+    const g = byKey.get(target);
+    g.turns = [...g.turns, ...arrived].sort((a, b) => index.get(a) - index.get(b));
+  }
+  return base;
+}

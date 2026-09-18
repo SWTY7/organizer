@@ -176,7 +176,7 @@ export const PREFS = {
 };
 
 export const metaOf = (id) =>
-  S.meta.get(id) || { convId: id, folderId: null, tags: [], starred: false, archived: false, sections: [] };
+  S.meta.get(id) || { convId: id, folderId: null, tags: [], starred: false, archived: false, sections: [], cardMoves: {} };
 
 export async function setMeta(ids, patch) {
   const rows = ids.map((id) => {
@@ -225,7 +225,7 @@ async function seedFolders(convs) {
       newFolders.push(f);
       S.folders.push(f);
     }
-    const m = { convId: c.id, folderId: f.id, tags: [], starred: !!c.starred, archived: false, sections: [] };
+    const m = { convId: c.id, folderId: f.id, tags: [], starred: !!c.starred, archived: false, sections: [], cardMoves: {} };
     S.meta.set(c.id, m);
     newMeta.push(m);
   }
@@ -525,10 +525,39 @@ export async function restoreSearch(s) {
 export const sectionsOf = (convId) => metaOf(convId).sections || [];
 export const setSection = (convId, key, title) =>
   setMeta([convId], (m) => ({ sections: SEC.setBreak(m.sections || [], key, title) }));
+
+/** Drop the moves cardMoves owed to a now-gone section, so they never orphan. */
+const purgeMoves = (moves, deadKeys) =>
+  Object.fromEntries(Object.entries(moves || {}).filter(([, v]) => !deadKeys.has(v)));
+
 export const clearSection = (convId, key) =>
-  setMeta([convId], (m) => ({ sections: SEC.clearBreak(m.sections || [], key) }));
+  setMeta([convId], (m) => ({
+    sections: SEC.clearBreak(m.sections || [], key),
+    cardMoves: purgeMoves(m.cardMoves, new Set([key])),
+  }));
 export const dropSections = (convId, keys) =>
-  setMeta([convId], (m) => ({ sections: (m.sections || []).filter((s) => !keys.has(s.startStableKey)) }));
+  setMeta([convId], (m) => ({
+    sections: (m.sections || []).filter((s) => !keys.has(s.startStableKey)),
+    cardMoves: purgeMoves(m.cardMoves, keys),
+  }));
+
+/* ------------------------------------------------------------------ cards */
+
+/**
+ * Which section a card is filed under on the Columns board, when that differs
+ * from where `group()` would naturally put it. Read only by Columns — see
+ * packages/organize/sections.js `applyMoves` for why every other view ignores
+ * this.
+ */
+export const cardMovesOf = (convId) => metaOf(convId).cardMoves || {};
+export const moveCard = (convId, turnKey, targetSectionKey) =>
+  setMeta([convId], (m) => ({ cardMoves: { ...(m.cardMoves || {}), [turnKey]: targetSectionKey } }));
+export const resetCard = (convId, turnKey) =>
+  setMeta([convId], (m) => {
+    const c = { ...(m.cardMoves || {}) };
+    delete c[turnKey];
+    return { cardMoves: c };
+  });
 
 /* ------------------------------------------------------------------- load */
 
@@ -536,7 +565,7 @@ export async function load() {
   const [convs, meta, folders, smart] = await Promise.all(STORES.map((s) => STORE.all(s)));
   S.convs = convs.sort((a, b) =>
     String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
-  S.meta = new Map(meta.map((m) => [m.convId, { tags: [], sections: [], ...m }]));
+  S.meta = new Map(meta.map((m) => [m.convId, { tags: [], sections: [], cardMoves: {}, ...m }]));
   S.folders = folders;
   S.smart = smart;
   await repairFolders();

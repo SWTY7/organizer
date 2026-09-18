@@ -15,9 +15,9 @@ import * as O from '../packages/organize/outline.js';
 import * as SEC from '../packages/organize/sections.js';
 import {
   S, R, PREFS, metaOf, convById, mainPath, folderPath, sectionsOf, setSection, clearSection,
-  dropSections, removeTag, openConv, blockText, revealFolder,
+  dropSections, removeTag, openConv, blockText, revealFolder, cardMovesOf, moveCard, resetCard,
 } from './core.js';
-import { $, el, icon, iconBtn, btn, menu, at, askText, confirmDialog, fmtDate } from './lib/dom.js';
+import { $, el, icon, iconBtn, btn, menu, at, askText, confirmDialog, fmtDate, toast, picker } from './lib/dom.js';
 import { md } from './lib/md.js';
 import { movePicker, tagPicker, star, archive, remove, plural } from './actions.js';
 import { provName } from './explorer.js';
@@ -278,11 +278,18 @@ function focus(col, groups, kids, ctx) {
   col.append(nav);
 }
 
+const DT_CARD = 'application/x-organizer-card';
+
 /**
  * One column per section, turns stacking down it — the layout for "the main
  * thread was A→B→C, but A had follow-ups". Needs sections; with none, there is
  * only one column, which is not what this template is for, so it says so
  * rather than quietly rendering a single narrow list.
+ *
+ * Cards can be dragged, or moved from their own ⋯, into another section. That
+ * is a Columns-only override — `SEC.applyMoves` — layered on top of the real,
+ * chronological grouping every other template reads; see its doc comment for
+ * why a move must never reach those other views.
  */
 function columns(col, groups, kids, ctx) {
   const total = groups.reduce((n, g) => n + g.turns.length, 0);
@@ -301,23 +308,96 @@ function columns(col, groups, kids, ctx) {
   if (groups.length < 2) {
     col.append(el('div', 'note',
       'This template shows one column per section. Bookmark a message to start one — the button appears when you hover it.'));
+    // Nothing to drag a card into yet, so fall through and render the one
+    // column plainly rather than wiring up drag-and-drop for a single target.
   }
 
-  const board = el('div', `cols${S.colsTransposed ? ' transposed' : ''}`);
-  let i = 0;
-  for (const sec of groups) {
+  const convId = ctx.convId;
+  const canMove = groups.length > 1;
+  const board = canMove ? SEC.applyMoves(ctx.turns, sectionsOf(convId), cardMovesOf(convId)) : groups;
+
+  // Two lookups built from the *natural* grouping, for the "moved" label and
+  // for telling a genuine drop (new section) from dropping a card back where
+  // it already is.
+  const naturalOf = new Map();   // turn -> its natural section key
+  const titleOf = new Map();     // section key -> its title, for that label
+  for (const g of groups) {
+    const gk = g.startKey ?? SEC.BEGIN;
+    titleOf.set(gk, g.title || 'Beginning');
+    for (const t of g.turns) naturalOf.set(t, gk);
+  }
+  const homeOf = new Map();      // turn key -> its CURRENT section key, i.e. after moves
+  for (const g of board) { const gk = g.startKey ?? SEC.BEGIN; for (const t of g.turns) homeOf.set(SEC.turnKey(t), gk); }
+  const trueIndex = new Map(ctx.turns.map((t, k) => [t, k]));
+
+  const doMove = async (turnKey, target) => {
+    await moveCard(convId, turnKey, target);
+    R.reader();
+    R.inspector();
+    toast('Moved to another section', {
+      label: 'Undo',
+      run: async () => { await resetCard(convId, turnKey); R.reader(); R.inspector(); },
+    });
+  };
+  const openMovePicker = (turnKey, here, anchor) => {
+    const items = groups
+      .map((g) => ({ label: g.title || 'Beginning', value: g.startKey ?? SEC.BEGIN, icon: 'columns' }))
+      .filter((it) => it.value !== here);
+    if (items.length) picker({ items, anchor, placeholder: 'Move to a section…', onPick: (v) => doMove(turnKey, v) });
+  };
+
+  const wrap = el('div', `cols${S.colsTransposed ? ' transposed' : ''}`);
+  for (const sec of board) {
+    const here = sec.startKey ?? SEC.BEGIN;
     const section = el('div', 'colsec');
     const head = el('div', 'colhead');
     head.append(el('span', 'st', sec.title || 'Beginning'), el('span', 'sn', plural(sec.turns.length, 'exchange')));
     section.append(head);
 
+    if (canMove) {
+      section.addEventListener('dragover', (e) => {
+        if (!e.dataTransfer.types.includes(DT_CARD)) return;
+        e.preventDefault();
+        section.classList.add('drop');
+      });
+      section.addEventListener('dragleave', () => section.classList.remove('drop'));
+      section.addEventListener('drop', (e) => {
+        section.classList.remove('drop');
+        if (!e.dataTransfer.types.includes(DT_CARD)) return;
+        e.preventDefault();
+        const turnKey = e.dataTransfer.getData(DT_CARD);
+        if (turnKey && homeOf.get(turnKey) !== here) doMove(turnKey, here);
+      });
+    }
+
+    if (!sec.turns.length) section.append(el('div', 'colempty', 'Nothing here — drag a card in.'));
+
     for (const t of sec.turns) {
-      const n = i++;
+      const n = trueIndex.get(t);
       const key = SEC.turnKey(t);
       const open = S.openTurns.has(n);
       const card = el('div', `colcard${open ? ' open' : ''}`);
       card.dataset.turn = n;
       S.turnEls[n] = card;
+
+      if (canMove && key) {
+        const moved = naturalOf.get(t) !== here;
+        const cbar = el('div', 'cbar');
+        cbar.append(moved
+          ? el('span', 'cfrom', `From ${titleOf.get(naturalOf.get(t)) || 'Beginning'}`)
+          : el('span', 'grow'));
+        cbar.append(iconBtn('columns', 'Move to another section', (e) => openMovePicker(key, here, at(e))));
+        // Only the strip is the drag handle, not the whole card — an open
+        // card's body is prose you may want to select and copy, and a
+        // draggable ancestor would hijack that drag into moving the card.
+        cbar.draggable = true;
+        cbar.title = 'Drag to move to another section';
+        cbar.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData(DT_CARD, key);
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        card.append(cbar);
+      }
 
       const chead = el('button', 'cchead');
       chead.type = 'button';
@@ -335,9 +415,9 @@ function columns(col, groups, kids, ctx) {
       }
       section.append(card);
     }
-    board.append(section);
+    wrap.append(section);
   }
-  col.append(board);
+  col.append(wrap);
 }
 
 /** The one line that stands in for a whole exchange. */
@@ -582,7 +662,7 @@ export function renderReader() {
     col.append(n);
   }
 
-  const ctx = { convId: conv.id, assistant: provName(conv.provider) };
+  const ctx = { convId: conv.id, assistant: provName(conv.provider), turns };
   ({ transcript, outline, focus, columns }[S.template] || transcript)(col, groups, kids, ctx);
 
   scroll.addEventListener('scroll', trackActive, { passive: true });
