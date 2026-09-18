@@ -3,44 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>organizer</title>
+<title>Organizer</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="app">
-  <nav id="nav">
-    <div class="pane-head">
-      <div class="brand">
-        <h1>organizer</h1>
-        <span class="spacer"></span>
-        <button class="icon-btn" id="theme" title="Toggle theme">◐</button>
-      </div>
-    </div>
-    <div id="navbody"></div>
-  </nav>
-
-  <aside id="side">
-    <div class="pane-head">
-      <div class="brand" style="margin-bottom:9px">
-        <button class="icon-btn" id="navToggle" title="Show or hide the sidebar">☰</button>
-        <span class="scope" id="scope"></span>
-        <span class="spacer"></span>
-        <button class="icon-btn" id="wipe" title="Remove all imported data">clear</button>
-      </div>
-      <input id="q" type="search" placeholder="Search all messages…" autocomplete="off">
-      <div class="filters" id="filters"></div>
-    </div>
-    <div id="list"></div>
-    <label id="drop">
-      <input type="file" id="file" multiple accept=".json,application/json">
-      Drop <b>.chat.json</b> / <b>.chatpack.json</b> here<br>or <span class="linkish">choose files</span>
-    </label>
-  </aside>
-
-  <main id="main"></main>
+  <aside id="explorer" aria-label="Library"></aside>
+  <main id="reader"></main>
+  <aside id="inspector" aria-label="Outline"></aside>
 </div>
 
 <div id="bulk" hidden></div>
+<div id="toasts" aria-live="polite"></div>
+<div id="veil" hidden><div>Drop <b>.chat.json</b> or <b>.chatpack.json</b> to import</div></div>
+<input type="file" id="file" multiple accept=".json,application/json" hidden>
 
 <script type="module" src="app.js"></script>
 </body>

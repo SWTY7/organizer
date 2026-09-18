@@ -77,11 +77,14 @@ That vendors KaTeX locally. The app itself never touches the network.
 |---|---|
 | [`PLAN.md`](PLAN.md) | full plan, phases, risks |
 | [`SPEC.md`](SPEC.md) | the `.chat` interchange format |
+| [`DESIGN.md`](DESIGN.md) | the reader's layout, interaction rules and tokens |
+| [`READING.md`](READING.md) | ways to read one long conversation |
 | [`packages/adapters/`](packages/adapters/) | one file per provider — the reusable core |
-| [`app/`](app/) | the reader — one self-contained HTML file |
+| [`packages/organize/`](packages/organize/) | folder tree, outline and section logic — pure, tested |
+| [`app/`](app/) | the reader — plain ES modules, no build step, no dependencies |
 | [`extension/`](extension/) | one-click capture with a selection list |
-| [`tools/`](tools/) | pasteable probe + exporter, and [what Phase 0 found](tools/FINDINGS.md) |
-| [`fixtures/`](fixtures/) | synthetic `.chat` files for testing |
+| [`tools/`](tools/) | pasteable probe + exporter, and [what the probes found](tools/FINDINGS.md) |
+| [`fixtures/`](fixtures/) | synthetic `.chat` files — `library.chatpack.json` is a whole demo library, from `tools/make-fixture.mjs` |
 
 ## Phases
 
@@ -89,8 +92,9 @@ That vendors KaTeX locally. The app itself never touches the network.
 - [x] **1 — format + reader.** `.chat` parser, import, browse, full-text search.
 - [x] **2 — capturer.** One-click capture with a selection list, and delta sync.
 - [x] **3 — organizer.** Folders, tags, saved searches, bulk actions, drag-to-file.
-- [ ] **4 — reading.** Nested folders, then outline / map / spine / columns / 2D
-      branches — [`READING.md`](READING.md).
+- [ ] **4 — reading.** Nested folders ✅, the explorer redesign ✅
+      ([`DESIGN.md`](DESIGN.md)), Transcript / Outline / Focus ✅, sections ✅;
+      next columns and 2D branches — [`READING.md`](READING.md).
 - [ ] **0b — asset probe.** Are uploaded files retrievable? Read-only, 20 minutes.
 - [ ] **5 — assets.** Images and attachments captured for real; sandboxed SVG and
       HTML; artifacts reconstructed.

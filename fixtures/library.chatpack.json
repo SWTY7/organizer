@@ -1,0 +1,1057 @@
+{
+ "schemaVersion": "0.2",
+ "kind": "chatpack",
+ "createdAt": "2026-09-18T00:00:00.000Z",
+ "generator": "tools/make-fixture.mjs — synthetic, safe to commit",
+ "conversations": [
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-0001",
+   "provider": "claude",
+   "providerConvId": "conv-0001",
+   "title": "Small oscillations — Landau & Lifshitz §21",
+   "createdAt": "2026-06-04T09:03:00.000Z",
+   "updatedAt": "2026-06-04T09:22:00.000Z",
+   "model": "claude-opus-5",
+   "currentLeafId": "m-0009",
+   "projectRef": {
+    "id": "p-Physics",
+    "name": "Physics"
+   },
+   "messages": [
+    {
+     "id": "m-0002",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-04T09:03:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Walk me through why the Lagrangian for small oscillations is a quadratic form."
+      }
+     ],
+     "stableKey": "m-0002",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0003",
+     "parentId": "m-0002",
+     "role": "assistant",
+     "createdAt": "2026-06-04T09:05:00.000Z",
+     "content": [
+      {
+       "type": "thinking",
+       "summaries": [
+        "Expand U about the minimum",
+        "Linear term vanishes at equilibrium",
+        "Kinetic term evaluated at q0"
+       ]
+      },
+      {
+       "type": "text",
+       "text": "## Expanding about equilibrium\n\nAt a stable equilibrium $q_0$ the potential has a minimum, so $\\partial U/\\partial q = 0$ there. Expanding to second order,\n\n$$U(q) \\approx U(q_0) + \\tfrac12 \\sum_{ik} k_{ik}\\, x_i x_k$$\n\nwith $x = q - q_0$. The constant drops out of the equations of motion, and the linear term is zero **by the definition of equilibrium**. What survives is quadratic.\n\n## The kinetic term\n\n$T = \\tfrac12 \\sum a_{ik}(q)\\, \\dot q_i \\dot q_k$ is already quadratic in velocities; to lowest order you evaluate $a_{ik}$ at $q_0$."
+      }
+     ],
+     "stableKey": "m-0003",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0004",
+     "parentId": "m-0003",
+     "role": "user",
+     "createdAt": "2026-06-04T09:08:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Why is it legitimate to freeze a_ik at q0 but keep the x terms in U?"
+      }
+     ],
+     "stableKey": "m-0004",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0005",
+     "parentId": "m-0004",
+     "role": "assistant",
+     "createdAt": "2026-06-04T09:10:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Because of **order counting**. $\\dot x$ is itself small, so $a_{ik}(q)\\,\\dot x_i \\dot x_k$ is already second order. Expanding $a_{ik}$ further only adds third-order terms. In $U$, the $x_i x_k$ terms *are* the leading non-trivial order."
+      }
+     ],
+     "stableKey": "m-0005",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0006",
+     "parentId": "m-0005",
+     "role": "user",
+     "createdAt": "2026-06-04T09:13:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "So the normal modes come from det(k − ω²m) = 0?"
+      }
+     ],
+     "stableKey": "m-0006",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0007",
+     "parentId": "m-0006",
+     "role": "assistant",
+     "createdAt": "2026-06-04T09:15:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Yes. Substituting $x_k = A_k e^{-i\\omega t}$ gives\n\n$$\\sum_k (k_{ik} - \\omega^2 m_{ik}) A_k = 0,$$\n\nwhich has non-trivial solutions only when the determinant vanishes: the **characteristic equation**, whose roots are the squared eigenfrequencies."
+      },
+      {
+       "type": "code",
+       "lang": "python",
+       "text": "import numpy as np\nk = np.array([[2, -1], [-1, 2]])\nm = np.eye(2)\nw2, modes = np.linalg.eigh(np.linalg.solve(m, k))\nprint(np.sqrt(w2))  # [1.0, 1.732]"
+      }
+     ],
+     "stableKey": "m-0007",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0008",
+     "parentId": "m-0007",
+     "role": "user",
+     "createdAt": "2026-06-04T09:18:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What about degenerate frequencies?"
+      }
+     ],
+     "stableKey": "m-0008",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0009",
+     "parentId": "m-0008",
+     "role": "assistant",
+     "createdAt": "2026-06-04T09:20:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "The key point is that a degenerate eigenvalue behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that a degenerate eigenvalue behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. Put differently is that a degenerate eigenvalue behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-0009",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000a",
+     "parentId": "m-0004",
+     "role": "assistant",
+     "createdAt": "2026-06-04T09:22:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "A shorter take on the same question, from a regenerate. It is a sibling of the reply above, so the reader has to be able to show both."
+      }
+     ],
+     "stableKey": "m-000a",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-000b",
+   "provider": "claude",
+   "providerConvId": "conv-000b",
+   "title": "Kalman filter from first principles",
+   "createdAt": "2026-06-06T09:25:00.000Z",
+   "updatedAt": "2026-06-06T09:32:00.000Z",
+   "model": "claude-sonnet-5",
+   "currentLeafId": "m-000f",
+   "projectRef": {
+    "id": "p-Physics",
+    "name": "Physics"
+   },
+   "messages": [
+    {
+     "id": "m-000c",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-06T09:25:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Derive the Kalman gain without hand-waving."
+      }
+     ],
+     "stableKey": "m-000c",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000d",
+     "parentId": "m-000c",
+     "role": "assistant",
+     "createdAt": "2026-06-06T09:27:00.000Z",
+     "content": [
+      {
+       "type": "thinking",
+       "summaries": [
+        "State the model",
+        "Minimise the trace of the posterior covariance"
+       ]
+      },
+      {
+       "type": "text",
+       "text": "The gain is whatever minimises the expected squared error of the updated estimate. Writing the posterior covariance as a function of $K$ and setting $\\partial\\, \\mathrm{tr}\\,P/\\partial K = 0$ gives\n\n$$K = P^- H^T (H P^- H^T + R)^{-1}.$$"
+      }
+     ],
+     "stableKey": "m-000d",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000e",
+     "parentId": "m-000d",
+     "role": "user",
+     "createdAt": "2026-06-06T09:30:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Intuition for when K is large vs small?"
+      }
+     ],
+     "stableKey": "m-000e",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000f",
+     "parentId": "m-000e",
+     "role": "assistant",
+     "createdAt": "2026-06-06T09:32:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "| situation | K | you trust |\n|---|---|---|\n| noisy sensor, R large | small | the model |\n| uncertain model, P large | large | the measurement |\n\nThe gain is a ratio of uncertainties, nothing more."
+      }
+     ],
+     "stableKey": "m-000f",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-000g",
+   "provider": "claude",
+   "providerConvId": "conv-000g",
+   "title": "Rust: why does the borrow checker reject this?",
+   "createdAt": "2026-06-08T09:35:00.000Z",
+   "updatedAt": "2026-06-08T09:42:00.000Z",
+   "model": "claude-opus-5",
+   "currentLeafId": "m-000k",
+   "projectRef": {
+    "id": "p-Coding",
+    "name": "Coding"
+   },
+   "messages": [
+    {
+     "id": "m-000h",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-08T09:35:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "This fails to compile and I do not see why:"
+      },
+      {
+       "type": "code",
+       "lang": "rust",
+       "text": "let mut v = vec![1, 2, 3];\nlet first = &v[0];\nv.push(4);\nprintln!(\"{first}\");"
+      }
+     ],
+     "stableKey": "m-000h",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000i",
+     "parentId": "m-000h",
+     "role": "assistant",
+     "createdAt": "2026-06-08T09:37:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "`push` may reallocate the vector, which would leave `first` pointing at freed memory. Rust refuses because the shared borrow `first` is still alive when `push` takes a mutable one."
+      },
+      {
+       "type": "code",
+       "lang": "rust",
+       "text": "let mut v = vec![1, 2, 3];\nlet first = v[0];   // copy the value instead of borrowing it\nv.push(4);\nprintln!(\"{first}\");"
+      }
+     ],
+     "stableKey": "m-000i",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000j",
+     "parentId": "m-000i",
+     "role": "user",
+     "createdAt": "2026-06-08T09:40:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "And if the element is not Copy?"
+      }
+     ],
+     "stableKey": "m-000j",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000k",
+     "parentId": "m-000j",
+     "role": "assistant",
+     "createdAt": "2026-06-08T09:42:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Clone it, restructure so the borrow ends before the push, or hold an index rather than a reference. The index is usually the cleanest."
+      }
+     ],
+     "stableKey": "m-000k",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-000l",
+   "provider": "chatgpt",
+   "providerConvId": "conv-000l",
+   "title": "Refactor React context to a store",
+   "createdAt": "2026-06-10T09:45:00.000Z",
+   "updatedAt": "2026-06-10T09:57:00.000Z",
+   "model": "gpt-5",
+   "currentLeafId": "m-000r",
+   "projectRef": {
+    "id": "p-Coding",
+    "name": "Coding"
+   },
+   "messages": [
+    {
+     "id": "m-000m",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-10T09:45:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Here is the context we have. It re-renders everything:"
+      },
+      {
+       "type": "file",
+       "filename": "AppContext.tsx",
+       "mime": "tsx",
+       "meta": {
+        "declaredBytes": 312
+       },
+       "text": "export const AppContext = createContext(null);\nexport function AppProvider({ children }) {\n  const [user, setUser] = useState(null);\n  const [theme, setTheme] = useState(\"light\");\n  return <AppContext.Provider value={{ user, setUser, theme, setTheme }}>{children}</AppContext.Provider>;\n}"
+      }
+     ],
+     "stableKey": "m-000m",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000n",
+     "parentId": "m-000m",
+     "role": "assistant",
+     "createdAt": "2026-06-10T09:47:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Every consumer re-renders whenever *any* field changes, because the `value` object is new on every render. A store with selectors fixes that: components subscribe to the slice they read."
+      },
+      {
+       "type": "code",
+       "lang": "ts",
+       "text": "export const useApp = create((set) => ({\n  user: null,\n  theme: \"light\",\n  setTheme: (theme) => set({ theme }),\n}));\n\nconst theme = useApp((s) => s.theme);  // re-renders only on theme"
+      }
+     ],
+     "stableKey": "m-000n",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000o",
+     "parentId": "m-000n",
+     "role": "user",
+     "createdAt": "2026-06-10T09:50:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Does this break SSR?"
+      }
+     ],
+     "stableKey": "m-000o",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000p",
+     "parentId": "m-000o",
+     "role": "assistant",
+     "createdAt": "2026-06-10T09:52:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "The key point is that a module-level store under SSR behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that a module-level store under SSR behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-000p",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000q",
+     "parentId": "m-000p",
+     "role": "user",
+     "createdAt": "2026-06-10T09:55:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "How would you migrate incrementally?"
+      }
+     ],
+     "stableKey": "m-000q",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000r",
+     "parentId": "m-000q",
+     "role": "assistant",
+     "createdAt": "2026-06-10T09:57:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Wrap the store in the old context first so both APIs work, then move consumers over one at a time. Delete the provider last."
+      }
+     ],
+     "stableKey": "m-000r",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-000s",
+   "provider": "chatgpt",
+   "providerConvId": "conv-000s",
+   "title": "Kyoto in late October — five days",
+   "createdAt": "2026-06-15T10:00:00.000Z",
+   "updatedAt": "2026-06-15T10:07:00.000Z",
+   "model": "gpt-5",
+   "currentLeafId": "m-000w",
+   "projectRef": {
+    "id": "p-Travel",
+    "name": "Travel"
+   },
+   "messages": [
+    {
+     "id": "m-000t",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-15T10:00:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Plan five days in Kyoto, late October, not too rushed."
+      }
+     ],
+     "stableKey": "m-000t",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000u",
+     "parentId": "m-000t",
+     "role": "assistant",
+     "createdAt": "2026-06-15T10:02:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "- **Day 1** — Higashiyama on foot: Kiyomizu-dera early, Sannenzaka, Yasaka.\n- **Day 2** — Arashiyama before 8am, then the Okochi Sanso garden.\n- **Day 3** — a day trip to Nara.\n- **Day 4** — Fushimi Inari at dawn; Tofuku-ji for early colour.\n- **Day 5** — Daitoku-ji sub-temples and a slow last afternoon."
+      },
+      {
+       "type": "image",
+       "filename": "kyoto-map.png",
+       "width": 1456,
+       "height": 817
+      }
+     ],
+     "stableKey": "m-000u",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000v",
+     "parentId": "m-000u",
+     "role": "user",
+     "createdAt": "2026-06-15T10:05:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Is late October too early for autumn leaves?"
+      }
+     ],
+     "stableKey": "m-000v",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000w",
+     "parentId": "m-000v",
+     "role": "assistant",
+     "createdAt": "2026-06-15T10:07:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Usually, for peak colour, which tends to arrive mid to late November. Tofuku-ji and the northern hills turn first."
+      }
+     ],
+     "stableKey": "m-000w",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-000x",
+   "provider": "claude",
+   "providerConvId": "conv-000x",
+   "title": "Notes on the uploaded decoherence review",
+   "createdAt": "2026-06-17T10:10:00.000Z",
+   "updatedAt": "2026-06-17T10:12:00.000Z",
+   "model": "claude-opus-5",
+   "currentLeafId": "m-000z",
+   "projectRef": {
+    "id": "p-Physics",
+    "name": "Physics"
+   },
+   "messages": [
+    {
+     "id": "m-000y",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-17T10:10:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Summarise the argument in section 3."
+      },
+      {
+       "type": "file",
+       "filename": "decoherence-review.pdf",
+       "mime": "pdf",
+       "meta": {
+        "declaredBytes": 38761
+       },
+       "text": "3. Environment-induced superselection\n\nThe system couples to many environmental degrees of freedom. Tracing them out suppresses off-diagonal terms in the pointer basis..."
+      }
+     ],
+     "stableKey": "m-000y",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-000z",
+     "parentId": "m-000y",
+     "role": "assistant",
+     "createdAt": "2026-06-17T10:12:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Section 3 argues that the preferred basis is picked out dynamically: the states that survive coupling to the environment are the ones the interaction leaves unentangled."
+      }
+     ],
+     "stableKey": "m-000z",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-0010",
+   "provider": "claude",
+   "providerConvId": "conv-0010",
+   "title": "Sourdough starter keeps going flat",
+   "createdAt": "2026-06-18T10:15:00.000Z",
+   "updatedAt": "2026-06-18T10:17:00.000Z",
+   "model": "claude-opus-5",
+   "currentLeafId": "m-0012",
+   "messages": [
+    {
+     "id": "m-0011",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-18T10:15:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "My starter rises then collapses within four hours."
+      }
+     ],
+     "stableKey": "m-0011",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0012",
+     "parentId": "m-0011",
+     "role": "assistant",
+     "createdAt": "2026-06-18T10:17:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "That is usually a hungry starter, not a weak one. Feed at a higher ratio — 1:5:5 — and it will peak later and hold."
+      }
+     ],
+     "stableKey": "m-0012",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-0013",
+   "provider": "chatgpt",
+   "providerConvId": "conv-0013",
+   "title": "What makes a commit message useful",
+   "createdAt": "2026-06-19T10:20:00.000Z",
+   "updatedAt": "2026-06-19T10:22:00.000Z",
+   "model": "gpt-5",
+   "currentLeafId": "m-0015",
+   "messages": [
+    {
+     "id": "m-0014",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-19T10:20:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What makes a commit message actually useful?"
+      }
+     ],
+     "stableKey": "m-0014",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0015",
+     "parentId": "m-0014",
+     "role": "assistant",
+     "createdAt": "2026-06-19T10:22:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "It says *why*. The diff already says what changed. A future reader needs the reason, the alternative you rejected, and anything surprising you found on the way."
+      }
+     ],
+     "stableKey": "m-0015",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  },
+  {
+   "schemaVersion": "0.2",
+   "kind": "conversation",
+   "id": "conv-0016",
+   "provider": "claude",
+   "providerConvId": "conv-0016",
+   "title": "Long session — thermodynamics from scratch",
+   "createdAt": "2026-06-20T10:25:00.000Z",
+   "updatedAt": "2026-06-20T11:12:00.000Z",
+   "model": "claude-opus-5",
+   "currentLeafId": "m-001q",
+   "projectRef": {
+    "id": "p-Physics",
+    "name": "Physics"
+   },
+   "messages": [
+    {
+     "id": "m-0017",
+     "parentId": null,
+     "role": "user",
+     "createdAt": "2026-06-20T10:25:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Explain temperature from first principles, and flag where textbooks cut corners."
+      }
+     ],
+     "stableKey": "m-0017",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0018",
+     "parentId": "m-0017",
+     "role": "assistant",
+     "createdAt": "2026-06-20T10:27:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "## Temperature\n\nThe key point is that temperature behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that temperature behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      },
+      {
+       "type": "code",
+       "lang": "python",
+       "text": "# temperature\nimport numpy as np"
+      }
+     ],
+     "stableKey": "m-0018",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-0019",
+     "parentId": "m-0018",
+     "role": "user",
+     "createdAt": "2026-06-20T10:30:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What about entropy?"
+      }
+     ],
+     "stableKey": "m-0019",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001a",
+     "parentId": "m-0019",
+     "role": "assistant",
+     "createdAt": "2026-06-20T10:32:00.000Z",
+     "content": [
+      {
+       "type": "thinking",
+       "summaries": [
+        "Recall the definition",
+        "Check the limiting case"
+       ]
+      },
+      {
+       "type": "text",
+       "text": "## Entropy\n\nThe key point is that entropy behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that entropy behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. Put differently is that entropy behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-001a",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001b",
+     "parentId": "m-001a",
+     "role": "user",
+     "createdAt": "2026-06-20T10:35:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What about free energy?"
+      }
+     ],
+     "stableKey": "m-001b",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001c",
+     "parentId": "m-001b",
+     "role": "assistant",
+     "createdAt": "2026-06-20T10:37:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "## Free energy\n\nThe key point is that free energy behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that free energy behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. Put differently is that free energy behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. One subtlety is that free energy behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-001c",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001d",
+     "parentId": "m-001c",
+     "role": "user",
+     "createdAt": "2026-06-20T10:40:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Explain the partition function from first principles, and flag where textbooks cut corners."
+      }
+     ],
+     "stableKey": "m-001d",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001e",
+     "parentId": "m-001d",
+     "role": "assistant",
+     "createdAt": "2026-06-20T10:42:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "## The partition function\n\nThe key point is that the partition function behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that the partition function behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      },
+      {
+       "type": "code",
+       "lang": "python",
+       "text": "# the partition function\nimport numpy as np"
+      }
+     ],
+     "stableKey": "m-001e",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001f",
+     "parentId": "m-001e",
+     "role": "user",
+     "createdAt": "2026-06-20T10:45:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What about phase transitions?"
+      }
+     ],
+     "stableKey": "m-001f",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001g",
+     "parentId": "m-001f",
+     "role": "assistant",
+     "createdAt": "2026-06-20T10:47:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "## Phase transitions\n\nThe key point is that phase transitions behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that phase transitions behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. Put differently is that phase transitions behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-001g",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001h",
+     "parentId": "m-001g",
+     "role": "user",
+     "createdAt": "2026-06-20T10:50:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What about heat capacity?"
+      }
+     ],
+     "stableKey": "m-001h",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001i",
+     "parentId": "m-001h",
+     "role": "assistant",
+     "createdAt": "2026-06-20T10:52:00.000Z",
+     "content": [
+      {
+       "type": "thinking",
+       "summaries": [
+        "Recall the definition",
+        "Check the limiting case"
+       ]
+      },
+      {
+       "type": "text",
+       "text": "## Heat capacity\n\nThe key point is that heat capacity behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that heat capacity behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. Put differently is that heat capacity behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. One subtlety is that heat capacity behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-001i",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001j",
+     "parentId": "m-001i",
+     "role": "user",
+     "createdAt": "2026-06-20T10:55:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Explain the third law from first principles, and flag where textbooks cut corners."
+      }
+     ],
+     "stableKey": "m-001j",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001k",
+     "parentId": "m-001j",
+     "role": "assistant",
+     "createdAt": "2026-06-20T10:57:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "## The third law\n\nThe key point is that the third law behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that the third law behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      },
+      {
+       "type": "code",
+       "lang": "python",
+       "text": "# the third law\nimport numpy as np"
+      }
+     ],
+     "stableKey": "m-001k",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001l",
+     "parentId": "m-001k",
+     "role": "user",
+     "createdAt": "2026-06-20T11:00:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What about Maxwell relations?"
+      }
+     ],
+     "stableKey": "m-001l",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001m",
+     "parentId": "m-001l",
+     "role": "assistant",
+     "createdAt": "2026-06-20T11:02:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "## Maxwell relations\n\nThe key point is that Maxwell relations behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that Maxwell relations behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. Put differently is that Maxwell relations behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-001m",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001n",
+     "parentId": "m-001m",
+     "role": "user",
+     "createdAt": "2026-06-20T11:05:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "What about chemical potential?"
+      }
+     ],
+     "stableKey": "m-001n",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001o",
+     "parentId": "m-001n",
+     "role": "assistant",
+     "createdAt": "2026-06-20T11:07:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "## Chemical potential\n\nThe key point is that chemical potential behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that chemical potential behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. Put differently is that chemical potential behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. One subtlety is that chemical potential behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      }
+     ],
+     "stableKey": "m-001o",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001p",
+     "parentId": "m-001o",
+     "role": "user",
+     "createdAt": "2026-06-20T11:10:00.000Z",
+     "content": [
+      {
+       "type": "text",
+       "text": "Explain the Gibbs paradox from first principles, and flag where textbooks cut corners."
+      }
+     ],
+     "stableKey": "m-001p",
+     "status": "complete",
+     "hidden": false
+    },
+    {
+     "id": "m-001q",
+     "parentId": "m-001p",
+     "role": "assistant",
+     "createdAt": "2026-06-20T11:12:00.000Z",
+     "content": [
+      {
+       "type": "thinking",
+       "summaries": [
+        "Recall the definition",
+        "Check the limiting case"
+       ]
+      },
+      {
+       "type": "text",
+       "text": "## The Gibbs paradox\n\nThe key point is that the Gibbs paradox behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows. In practice is that the Gibbs paradox behaves the way it does for a structural reason, not an accidental one, and once you see that reason the rest follows."
+      },
+      {
+       "type": "code",
+       "lang": "python",
+       "text": "# the Gibbs paradox\nimport numpy as np"
+      }
+     ],
+     "stableKey": "m-001q",
+     "status": "complete",
+     "hidden": false
+    }
+   ]
+  }
+ ]
+}

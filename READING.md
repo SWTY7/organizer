@@ -44,8 +44,12 @@ Map templates below, which is why those ship first.
 
 ### 2. Manual
 
-Right-click any turn → **start a section here**, give it a name. Rename or
-remove it from the heading. Exact, and it is also how you correct source 3.
+Hover one of your messages, or an exchange in the outline, and press the
+bookmark — **start a section here** — then name it. Rename or remove it from
+the heading's own buttons. Exact, and it is also how you correct source 3.
+
+(The first version put this behind right-click only. That is a control nobody
+finds; see DESIGN.md, interaction rule 1.)
 
 Stored in `meta` as `sections: [{ startStableKey, title }]`. In `meta`, not on
 the conversation, so re-capturing the chat keeps your sections — this is what
@@ -106,6 +110,13 @@ about sixty lines. **It ships first.**
 
 ### 3. Map — a ribbon you never lose
 
+> **Since the redesign** (DESIGN.md), the ribbon and the Spine rail are one
+> thing: the inspector's outline. Each exchange there carries a bar for its
+> length and the one you are reading is highlighted as you scroll — the
+> ribbon's job — and in Focus it is the list you pick from — the rail's job.
+> Two navigators beside one conversation left the reading column 372px wide
+> on a laptop; one leaves it 760.
+
 A thin vertical strip pinned beside the thread. One bar per message, height
 proportional to length, colour by role, notches for code / image / thinking. The
 part currently on screen is highlighted; click anywhere to jump.
@@ -113,7 +124,10 @@ part currently on screen is highlighted; click anywhere to jump.
 Forty lines, works with every other template, and turns a 200-message
 conversation into something you can aim at. Ships with Outline.
 
-### 4. Spine — two panes
+### 4. Spine — two panes (now **Focus**)
+
+> Now the **Focus** template: one exchange in the reader, with Previous / Next
+> and `j` / `k`, and the inspector as its rail.
 
 Outline on the left as a fixed rail, the selected turn in full on the right.
 Reads like documentation rather than like chat. `j` / `k` move. This is the one
