@@ -394,6 +394,57 @@ input.inline {
 .fbtn .fq { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fbtn .i { color: var(--fg-3); }
 
+/* --- columns template --- */
+/* Wider than the reading column: a board is not prose, and 760px would fit
+   barely two sections. Still bounded, so it does not stretch edge to edge on
+   an ultra-wide monitor. */
+.rd-col.wide { max-width: 1400px; }
+
+.cols {
+  display: flex; gap: 14px; align-items: flex-start;
+  overflow-x: auto; padding-bottom: 10px;
+}
+/* Non-transposed: sections run left to right, each one a bounded, independently
+   scrolling column — a small kanban board. */
+.cols:not(.transposed) { max-height: min(72vh, 820px); }
+.cols:not(.transposed) .colsec { overflow-y: auto; max-height: inherit; }
+
+.colsec {
+  flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+  background: var(--bg-side);
+}
+.colhead {
+  display: flex; align-items: baseline; gap: 6px; padding: 2px 4px 7px;
+  margin-bottom: 2px; border-bottom: 1px solid var(--line);
+}
+.colhead .st { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.colhead .sn { color: var(--fg-3); font-size: 11px; }
+
+.colcard { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); flex: none; }
+.cchead {
+  display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 9px 8px;
+  background: none; border: 0; text-align: left; border-radius: 8px;
+}
+.cchead:hover { background: var(--hover); }
+.cchead > .i { margin-top: 3px; color: var(--fg-3); transition: transform .12s; flex: none; }
+.colcard.open .cchead > .i { transform: rotate(90deg); }
+.colcard .odetail { padding: 0 10px 10px 30px; }
+.colcard.open .og, .colcard.open .ob { display: none; }
+
+/* Transposed: sections stack down the page as rows, each one scrolling
+   sideways through its own turns — the same data, the other axis. */
+.cols.transposed { flex-direction: column; overflow-x: visible; max-height: none; }
+.cols.transposed .colsec {
+  flex-direction: row; flex: none; width: 100%; gap: 10px;
+  overflow-x: auto; overflow-y: visible; max-height: none;
+}
+.cols.transposed .colhead {
+  flex: 0 0 130px; flex-direction: column; align-items: flex-start; gap: 2px;
+  border-bottom: 0; border-right: 1px solid var(--line); margin: 0; padding: 2px 12px 2px 4px;
+}
+.cols.transposed .colcard { flex: 0 0 280px; }
+
 /* --- empty states --- */
 .rd-empty { max-width: 520px; margin: 12vh auto 0; padding: 0 24px; }
 .rd-empty h1 { font-size: 26px; font-weight: 600; letter-spacing: -.015em; margin: 0 0 8px; }

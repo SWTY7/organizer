@@ -118,7 +118,8 @@ export const S = {
   showInspector: true,
   focusAt: 0,             // which exchange the Focus template shows
   outlineFilter: '',
-  openTurns: new Set(),   // exchanges expanded in Outline — survives a re-render
+  openTurns: new Set(),   // exchanges expanded in Outline or Columns — survives a re-render
+  colsTransposed: false,  // Columns: sections across (default) or sections stacked
   turnEls: [],            // first element of each exchange, for the inspector
   activeTurn: 0,
   revealPending: false,   // scroll the tree to the open chat, once
@@ -153,6 +154,7 @@ export const PREFS = {
       S.template = t === 'spine' ? 'focus' : t;  // Spine became Focus
       S.showExplorer = ls.getItem('organizer.explorer') !== '0';
       S.showInspector = ls.getItem('organizer.inspector') !== '0';
+      S.colsTransposed = ls.getItem('organizer.colsTransposed') === '1';
     } catch { /* private mode, or storage off — defaults are fine */ }
   },
   save() {
@@ -162,6 +164,7 @@ export const PREFS = {
       ls.setItem('organizer.template', S.template);
       ls.setItem('organizer.explorer', S.showExplorer ? '1' : '0');
       ls.setItem('organizer.inspector', S.showInspector ? '1' : '0');
+      ls.setItem('organizer.colsTransposed', S.colsTransposed ? '1' : '0');
     } catch {}
   },
   theme() { try { return localStorage.getItem('organizer.theme') || ''; } catch { return ''; } },

@@ -140,7 +140,7 @@ makes an app hard to use. Filtering the rail answers the same question —
 *where in this chat did I talk about X* — by hiding the exchanges that do not
 match, which is both simpler to build and simpler to explain.
 
-### 5. Columns — the two-dimensional one
+### 5. Columns — the two-dimensional one ✅
 
 Your idea, made concrete. Each **section** is a column; the turns inside it
 stack down the column; you scroll sideways through the conversation's topics.
@@ -152,9 +152,21 @@ stack down the column; you scroll sideways through the conversation's topics.
     A3
 
 With a transpose toggle, because which axis feels natural depends on whether
-you have many short sections or few long ones. Same code, one `flex-direction`.
+you have many short sections or few long ones — sections stack down the page
+instead, each one a horizontally-scrolling row of its own turns. Same markup,
+`flex-direction` swapped on the board and on each section.
 
-Needs sectioning, so it lands after the sectioning work.
+Each column is a small kanban board: bounded height, its own vertical scroll,
+so one long section does not stretch every other column to match it. Cards
+collapse to the same one-line summary Outline uses, and open in place —
+`S.openTurns` is shared with Outline, so a card you opened stays open if you
+switch templates mid-read. With no sections yet, it says so rather than
+silently rendering one lonely column that looks like a bug.
+
+Reuses the inspector as its navigator like every other template: clicking an
+exchange there opens the matching card and scrolls it into view on both axes,
+since in a 2D board "scroll it into view" means centring the right column too,
+not just the right row.
 
 ### 6. Branches — the honest 2D
 
@@ -187,7 +199,7 @@ also where reconstructed artifacts live (see PLAN.md, Track B).
 | 1 | Outline + Map ✅ | nothing | small |
 | 2 | Spine ✅ | Outline | small |
 | 3 | Sections — manual ✅ | `meta.sections` | small |
-| 4 | Columns | sections | medium |
+| 4 | Columns ✅ | sections | medium |
 | 5 | Branches 2D + diff | nothing (data is there) | medium |
 | 6 | Sections — suggested | the heuristic | medium |
 | 7 | Gallery | assets work, for images | medium |

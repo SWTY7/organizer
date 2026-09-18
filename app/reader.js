@@ -1,10 +1,11 @@
 /* ==========================================================================
    The reader: one conversation, in a centred column.
 
-   Three templates, switched from the top bar:
+   Four templates, switched from the top bar:
      Transcript  every message, top to bottom
      Outline     one line per exchange, open the ones you want
      Focus       one exchange at a time — the inspector is its list
+     Columns     one column per section, turns stacking down it
 
    The inspector (inspector.js) is the navigator for all three, so the reader
    has no rail or ribbon of its own any more.
@@ -25,6 +26,7 @@ export const TEMPLATES = {
   transcript: { label: 'Transcript', icon: 'rows', hint: 'Every message, top to bottom' },
   outline: { label: 'Outline', icon: 'outline', hint: 'One line per exchange — open the ones you want' },
   focus: { label: 'Focus', icon: 'focus', hint: 'One exchange at a time · j / k to move' },
+  columns: { label: 'Columns', icon: 'columns', hint: 'One column per section — scroll sideways between topics' },
 };
 
 /* ---------------------------------------------------------------- blocks */
@@ -276,6 +278,68 @@ function focus(col, groups, kids, ctx) {
   col.append(nav);
 }
 
+/**
+ * One column per section, turns stacking down it — the layout for "the main
+ * thread was A→B→C, but A had follow-ups". Needs sections; with none, there is
+ * only one column, which is not what this template is for, so it says so
+ * rather than quietly rendering a single narrow list.
+ */
+function columns(col, groups, kids, ctx) {
+  const total = groups.reduce((n, g) => n + g.turns.length, 0);
+  const bar = el('div', 'obar');
+  bar.append(el('span', null, groups.length > 1
+    ? `${plural(groups.length, 'section')} · ${plural(total, 'exchange')}`
+    : plural(total, 'exchange')));
+  bar.append(el('span', 'grow'));
+  if (groups.length > 1) {
+    bar.append(iconBtn(S.colsTransposed ? 'columns' : 'swap',
+      S.colsTransposed ? 'Lay sections out as columns' : 'Lay sections out as rows',
+      () => { S.colsTransposed = !S.colsTransposed; PREFS.save(); R.reader(); }));
+  }
+  col.append(bar);
+
+  if (groups.length < 2) {
+    col.append(el('div', 'note',
+      'This template shows one column per section. Bookmark a message to start one — the button appears when you hover it.'));
+  }
+
+  const board = el('div', `cols${S.colsTransposed ? ' transposed' : ''}`);
+  let i = 0;
+  for (const sec of groups) {
+    const section = el('div', 'colsec');
+    const head = el('div', 'colhead');
+    head.append(el('span', 'st', sec.title || 'Beginning'), el('span', 'sn', plural(sec.turns.length, 'exchange')));
+    section.append(head);
+
+    for (const t of sec.turns) {
+      const n = i++;
+      const key = SEC.turnKey(t);
+      const open = S.openTurns.has(n);
+      const card = el('div', `colcard${open ? ' open' : ''}`);
+      card.dataset.turn = n;
+      S.turnEls[n] = card;
+
+      const chead = el('button', 'cchead');
+      chead.type = 'button';
+      chead.append(el('span', 'onum', String(n + 1)), turnSummary(t, 90), icon('chevR'));
+      chead.onclick = () => {
+        if (S.openTurns.has(n)) S.openTurns.delete(n); else S.openTurns.add(n);
+        R.reader();
+      };
+      card.append(chead);
+      if (open) {
+        const detail = el('div', 'odetail');
+        const tctx = { ...ctx, turnKey: key, startsSection: sec.startKey === key };
+        for (const msg of [t.user, ...t.replies].filter(Boolean)) detail.append(renderMessage(msg, kids, tctx));
+        card.append(detail);
+      }
+      section.append(card);
+    }
+    board.append(section);
+  }
+  col.append(board);
+}
+
 /** The one line that stands in for a whole exchange. */
 export function turnSummary(t, width = 160) {
   const mid = el('span', 'osum');
@@ -303,19 +367,25 @@ export function goTurn(i) {
     $('.rd-scroll')?.scrollTo({ top: 0 });
     return;
   }
-  if (S.template === 'outline' && !S.openTurns.has(n)) {
+  if ((S.template === 'outline' || S.template === 'columns') && !S.openTurns.has(n)) {
     S.openTurns.add(n);
     R.reader();
   }
   const node = S.turnEls[n];
   if (!node) return;
-  node.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  // Columns scrolls in two directions — centre the target column as well as
+  // bringing the card into view, or the jump can land off to the side.
+  node.scrollIntoView(S.template === 'columns'
+    ? { block: 'nearest', inline: 'center', behavior: 'smooth' }
+    : { block: 'start', behavior: 'smooth' });
   S.activeTurn = n;
   R.markActive(n);
 }
 
 function trackActive() {
-  if (S.template === 'focus') return;
+  // Neither template has one reading order to track a position along:
+  // Focus shows a single exchange, and Columns is a 2D board.
+  if (S.template === 'focus' || S.template === 'columns') return;
   const sc = $('.rd-scroll');
   if (!sc) return;
   const top = sc.getBoundingClientRect().top + 60;
@@ -480,7 +550,7 @@ export function renderReader() {
   S.turnEls = [];
   if (!conv) { scroll.append(emptyReader()); return; }
 
-  const col = el('article', 'rd-col');
+  const col = el('article', S.template === 'columns' ? 'rd-col wide' : 'rd-col');
   scroll.append(col);
   const { path, kids, rootCount } = mainPath(conv);
   col.append(header(conv, path));
@@ -513,7 +583,7 @@ export function renderReader() {
   }
 
   const ctx = { convId: conv.id, assistant: provName(conv.provider) };
-  ({ transcript, outline, focus }[S.template] || transcript)(col, groups, kids, ctx);
+  ({ transcript, outline, focus, columns }[S.template] || transcript)(col, groups, kids, ctx);
 
   scroll.addEventListener('scroll', trackActive, { passive: true });
   scroll.scrollTop = keep;

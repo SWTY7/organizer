@@ -93,8 +93,8 @@ That vendors KaTeX locally. The app itself never touches the network.
 - [x] **2 — capturer.** One-click capture with a selection list, and delta sync.
 - [x] **3 — organizer.** Folders, tags, saved searches, bulk actions, drag-to-file.
 - [ ] **4 — reading.** Nested folders ✅, the explorer redesign ✅
-      ([`DESIGN.md`](DESIGN.md)), Transcript / Outline / Focus ✅, sections ✅;
-      next columns and 2D branches — [`READING.md`](READING.md).
+      ([`DESIGN.md`](DESIGN.md)), Transcript / Outline / Focus / Columns ✅,
+      sections ✅; next 2D branches — [`READING.md`](READING.md).
 - [ ] **0b — asset probe.** Are uploaded files retrievable? Read-only, 20 minutes.
 - [ ] **5 — assets.** Images and attachments captured for real; sandboxed SVG and
       HTML; artifacts reconstructed.

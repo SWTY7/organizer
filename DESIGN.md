@@ -22,8 +22,9 @@ workspace, neutral tone.**
   folder live under **Unsorted**, so everything is reachable from the tree.
   Searching, or picking Starred / Archived / a tag / a saved search, swaps the
   tree for a flat result list with a way back.
-- **Reader.** The conversation, in a centred column capped at 760px. The
-  template switch (Transcript / Outline / Focus) lives in its top bar.
+- **Reader.** The conversation, in a centred column capped at 760px — except
+  Columns, which is a board and takes up to 1400px, since it is not prose. The
+  template switch (Transcript / Outline / Focus / Columns) lives in its top bar.
 - **Inspector.** The conversation's outline — sections and exchanges, each with
   a bar for its length, the current one highlighted as you scroll — and its
   details. This replaces both the Spine rail and the ribbon: one navigator,

@@ -38,6 +38,8 @@ const P = {
   arrowL: 'M19 12H5 M11 6l-6 6 6 6',
   arrowR: 'M5 12h14 M13 6l6 6-6 6',
   branch: 'M7 5v14 M17 7.5a2 2 0 1 0 0 .01 M17 9.5c0 4-10 3-10 7',
+  columns: 'M4.5 5.5h4.5v13H4.5z M9.75 5.5h4.5v13h-4.5z M15 5.5h4.5v9H15z',
+  swap: 'M6 8.5h12 M14.5 5l3.5 3.5-3.5 3.5 M18 15.5H6 M9.5 12l-3.5 3.5 3.5 3.5',
 };
 
 const NS = 'http://www.w3.org/2000/svg';
