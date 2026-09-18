@@ -131,3 +131,24 @@ test('moves never change which turns exist or their content, only their grouping
   assert.equal(all.length, SIX.length);
   assert.deepEqual(new Set(all.map(turnKey)), new Set(SIX.map(turnKey)));
 });
+
+/* ------------------------------------------------------- board columns */
+
+test('board columns come after the sections, empty until something moves in', () => {
+  const g = applyMoves(SIX, SECS3, {}, [{ id: 'x1', title: 'Later' }]);
+  assert.equal(g.length, 4);
+  assert.equal(g[3].title, 'Later');
+  assert.equal(g[3].extra, true);
+  assert.deepEqual(g[3].turns, []);
+  assert.deepEqual(g.map((x) => x.key), [BEGIN, 'c', 'e', 'x1'], 'every column says what a move should target');
+});
+
+test('a chat with no sections can still be arranged, into a board column', () => {
+  const g = applyMoves(SIX, [], { b: 'x1', e: 'x1' }, [{ id: 'x1', title: 'Side' }]);
+  assert.deepEqual(namesOf(g), [['a', 'c', 'd', 'f'], ['b', 'e']]);
+});
+
+test('removing a board column puts its cards back where they came from', () => {
+  const g = applyMoves(SIX, [], { b: 'x1' }, []);
+  assert.deepEqual(namesOf(g), [['a', 'b', 'c', 'd', 'e', 'f']]);
+});

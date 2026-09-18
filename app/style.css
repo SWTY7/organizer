@@ -378,8 +378,45 @@ input.inline {
 .oturn.open .og, .oturn.open .ob { display: none; }
 .odetail { padding: 4px 6px 12px 38px; }
 
+/* --- one exchange as a page: Focus, and the board's pop-up --- */
+.eyebrow { display: flex; gap: 6px; color: var(--fg-3); font-size: 12px; margin: 0 0 10px; }
+.xpage .msg.user.title .body { background: none; padding: 0; }
+.xpage .msg.user.title .prose { font-size: 21px; line-height: 1.4; font-weight: 600; letter-spacing: -.015em; }
+.xpage .msg.user.title .who .wn { display: none; }
+.xpage .msg.user { margin-bottom: 18px; padding-bottom: 18px; border-bottom: 1px solid var(--line); }
+.xpage .xanswer .msg.assistant > .who { display: none; }
+.xpage .xanswer .msg.assistant:has(.branch) > .who { display: flex; }
+.xpage .prose { font-size: 15.5px; line-height: 1.75; }
+.xpage .prose h1, .xpage .prose h2, .xpage .prose h3 { scroll-margin-top: 64px; }
+.ptoc { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 22px; }
+.ptl { color: var(--fg-3); font-size: 11.5px; font-weight: 600; margin-right: 4px; }
+.pchip {
+  height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: 999px;
+  background: none; color: var(--fg-2); font-size: 12.5px; max-width: 280px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pchip:hover { background: var(--hover); color: var(--fg); }
+
 /* --- focus template --- */
-.eyebrow { display: flex; gap: 6px; color: var(--fg-3); font-size: 12px; margin: 0 0 14px; }
+/* The strip stays pinned while you read: where you are, how far is left. */
+.fstrip {
+  position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px;
+  margin: -8px -4px 18px; padding: 10px 4px; background: var(--bg);
+}
+.fticks { flex: 1; display: flex; gap: 2px; min-width: 0; }
+.ftick {
+  flex: 1 1 0; min-width: 2px; height: 16px; padding: 0; border: 0; background: none;
+  position: relative; border-radius: 2px;
+}
+.ftick::after {
+  content: ''; position: absolute; left: 0; right: 0; top: 6px; height: 4px; border-radius: 2px;
+  background: var(--line-2); transition: background .1s, top .1s, height .1s;
+}
+.ftick.done::after { background: var(--fg-3); }
+.ftick.on::after { background: var(--accent); top: 3px; height: 10px; }
+.ftick:hover::after { background: var(--fg-2); top: 4px; height: 8px; }
+.ftick.sb { margin-left: 6px; }
+.fpos { color: var(--fg-3); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .fnav { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 30px; }
 .fbtn {
   display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center;
@@ -394,69 +431,127 @@ input.inline {
 .fbtn .fq { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fbtn .i { color: var(--fg-3); }
 
-/* --- columns template --- */
-/* Wider than the reading column: a board is not prose, and 760px would fit
-   barely two sections. Still bounded, so it does not stretch edge to edge on
-   an ultra-wide monitor. */
-.rd-col.wide { max-width: 1400px; }
+/* --- board (the columns template) --- */
+/* The board fills the reader, edge to edge and top to bottom: it is a surface,
+   not a page, and the page's own scroll would put a second scrollbar around
+   the columns' scrollbars. The header stays; the columns take the rest. */
+.rd-scroll.board { overflow: hidden; display: flex; flex-direction: column; }
+.rd-col.wide {
+  max-width: none; width: 100%; flex: 1; min-height: 0;
+  display: flex; flex-direction: column; padding: 20px 20px 12px;
+}
+.rd-col.wide > .rd-head { margin-bottom: 14px; }
+.rd-col.wide > .rd-head h1 { font-size: 20px; }
+.rd-col.wide > .rd-head .rd-acts { margin-top: 10px; }
+.bhint { color: var(--fg-3); }
+@media (max-width: 1100px) { .bhint { display: none; } }
 
 .cols {
-  display: flex; gap: 14px; align-items: flex-start;
-  overflow-x: auto; padding-bottom: 10px;
+  flex: 1; min-height: 0; display: flex; gap: 12px; align-items: stretch;
+  overflow: auto; padding-bottom: 6px;
 }
-/* Non-transposed: sections run left to right, each one a bounded, independently
-   scrolling column — a small kanban board. */
-.cols:not(.transposed) { max-height: min(72vh, 820px); }
-.cols:not(.transposed) .colsec { overflow-y: auto; max-height: inherit; }
-
 .colsec {
-  flex: 0 0 300px; display: flex; flex-direction: column; gap: 8px;
-  border: 1px solid var(--line); border-radius: 10px; padding: 10px;
-  background: var(--bg-side);
+  flex: 0 0 300px; display: flex; flex-direction: column; min-height: 0;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg-side);
+  transition: background .1s, box-shadow .1s;
 }
+.colsec.extra { border-style: dashed; border-color: var(--line-2); }
 .colhead {
-  display: flex; align-items: baseline; gap: 6px; padding: 2px 4px 7px;
-  margin-bottom: 2px; border-bottom: 1px solid var(--line);
+  display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 8px 0 12px; flex: none;
+  border-bottom: 1px solid var(--line);
 }
 .colhead .st { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
-.colhead .sn { color: var(--fg-3); font-size: 11px; }
+.colhead .sn {
+  color: var(--fg-3); font-size: 11px; font-variant-numeric: tabular-nums;
+  background: var(--bg-sunk); border-radius: 999px; padding: 1px 7px;
+}
+.colhead .ibtn { width: 22px; height: 22px; }
+.collist { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; padding: 10px; }
 
-.colcard { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); flex: none; }
+.colcard {
+  position: relative; flex: none; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); box-shadow: 0 1px 2px rgba(0, 0, 0, .04); cursor: grab;
+  transition: border-color .1s, box-shadow .1s, opacity .1s;
+}
+.colcard:hover { border-color: var(--line-2); box-shadow: 0 2px 8px rgba(0, 0, 0, .08); }
+.colcard.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.colcard.dragging { opacity: .4; }
 .cchead {
-  display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 9px 8px;
-  background: none; border: 0; text-align: left; border-radius: 8px;
+  display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 10px 34px 10px 10px;
+  background: none; border: 0; text-align: left; border-radius: 8px; cursor: inherit;
 }
-.cchead:hover { background: var(--hover); }
-.cchead > .i { margin-top: 3px; color: var(--fg-3); transition: transform .12s; flex: none; }
-.colcard.open .cchead > .i { transform: rotate(90deg); }
-.colcard .odetail { padding: 0 10px 10px 30px; }
-.colcard.open .og, .colcard.open .ob { display: none; }
+.cchead .osum { gap: 5px; }
+.cchead .oq {
+  font-size: 13.5px; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cchead .og {
+  font-size: 12.5px; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+}
+.cchead .ob { font-size: 11.5px; }
+.cchead .onum { width: 18px; font-size: 11.5px; }
+.cfrom { margin: -4px 10px 9px 36px; color: var(--fg-3); font-size: 11px; }
+.cfrom::before { content: '↩ '; }
+.cmove { position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; opacity: 0; transition: opacity .12s; }
+.colcard:hover .cmove, .colcard:focus-within .cmove { opacity: 1; }
+@media (hover: none) { .cmove { opacity: 1; } }
 
-/* Transposed: sections stack down the page as rows, each one scrolling
-   sideways through its own turns — the same data, the other axis. */
-.cols.transposed { flex-direction: column; overflow-x: visible; max-height: none; }
-.cols.transposed .colsec {
-  flex-direction: row; flex: none; width: 100%; gap: 10px;
-  overflow-x: auto; overflow-y: visible; max-height: none;
-}
-.cols.transposed .colhead {
-  flex: 0 0 130px; flex-direction: column; align-items: flex-start; gap: 2px;
-  border-bottom: 0; border-right: 1px solid var(--line); margin: 0; padding: 2px 12px 2px 4px;
-}
-.cols.transposed .colcard { flex: 0 0 280px; }
-
-.colsec.drop { background: var(--sel); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.colsec.drop, .colnew.drop { background: var(--sel); box-shadow: inset 0 0 0 1.5px var(--accent); }
 .colempty {
-  border: 1px dashed var(--line-2); border-radius: 8px; padding: 14px 10px;
+  border: 1px dashed var(--line-2); border-radius: 8px; padding: 18px 10px;
   color: var(--fg-3); font-size: 12px; text-align: center;
 }
-.cbar { display: flex; align-items: center; gap: 4px; padding: 5px 6px 0; cursor: grab; }
-.cbar:active { cursor: grabbing; }
-.cbar .cfrom { color: var(--fg-3); font-size: 11px; }
-/* Revealed by hovering anywhere on the card, like a list row's own actions —
-   not just the thin drag strip, which would be easy to miss. */
-.cbar .ibtn { width: 22px; height: 22px; opacity: 0; transition: opacity .12s; }
-.colcard:hover .cbar .ibtn, .colcard:focus-within .cbar .ibtn { opacity: 1; }
+.colnew {
+  flex: 0 0 200px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
+  border: 1.5px dashed var(--line-2); border-radius: 10px; background: none; color: var(--fg-2);
+}
+.colnew:hover { background: var(--hover); color: var(--fg); }
+.colnew .cn-t { font-weight: 500; }
+.colnew .cn-sub { color: var(--fg-3); font-size: 11.5px; }
+.cols.dragging .colnew { border-color: var(--accent); color: var(--accent); }
+
+/* Stacked: columns become rows down the board, each scrolling sideways. */
+.cols.transposed { flex-direction: column; align-items: stretch; }
+.cols.transposed .colsec { flex: none; flex-direction: row; }
+.cols.transposed .colhead {
+  flex: 0 0 150px; height: auto; flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px;
+  border-bottom: 0; border-right: 1px solid var(--line); padding: 10px 12px;
+}
+.cols.transposed .colhead .st { white-space: normal; width: 100%; }
+.cols.transposed .collist { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
+.cols.transposed .colcard { flex: 0 0 280px; }
+.cols.transposed .colempty { flex: 0 0 280px; }
+.cols.transposed .colnew { flex: none; height: 72px; flex-direction: row; gap: 8px; }
+
+/* --- the sheet: one exchange, full size, over the board --- */
+.sheet-veil {
+  position: fixed; inset: 0; z-index: 45; display: grid; place-items: center;
+  padding: 3vh 3vw; background: rgba(0, 0, 0, .34);
+  animation: fade .12s ease-out;
+}
+.sheet {
+  width: min(1000px, 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: var(--shadow);
+  animation: rise .14s ease-out;
+}
+.sheet-top {
+  display: flex; align-items: center; gap: 4px; height: 50px; flex: none; padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+.sheet-top .ibtn:disabled { opacity: .35; cursor: default; background: none; }
+.sheet-pos { color: var(--fg-3); font-size: 12px; margin-left: 6px; font-variant-numeric: tabular-nums; }
+.sheet-top .btn { max-width: 260px; margin-right: 4px; }
+.sheet-body { flex: 1; min-height: 0; overflow-y: auto; padding: 30px 48px 80px; }
+.sheet-body > .xpage { max-width: 740px; margin: 0 auto; }
+@keyframes fade { from { opacity: 0; } }
+@keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.99); } }
+@media (max-width: 700px) {
+  .sheet-veil { padding: 0; }
+  .sheet { border-radius: 0; border: 0; }
+  .sheet-body { padding: 20px 18px 60px; }
+}
+@media (prefers-reduced-motion: reduce) { .sheet-veil, .sheet { animation: none; } }
 
 /* --- empty states --- */
 .rd-empty { max-width: 520px; margin: 12vh auto 0; padding: 0 24px; }

@@ -176,7 +176,7 @@ export const PREFS = {
 };
 
 export const metaOf = (id) =>
-  S.meta.get(id) || { convId: id, folderId: null, tags: [], starred: false, archived: false, sections: [], cardMoves: {} };
+  S.meta.get(id) || { convId: id, folderId: null, tags: [], starred: false, archived: false, sections: [], cardMoves: {}, boardCols: [] };
 
 export async function setMeta(ids, patch) {
   const rows = ids.map((id) => {
@@ -225,7 +225,7 @@ async function seedFolders(convs) {
       newFolders.push(f);
       S.folders.push(f);
     }
-    const m = { convId: c.id, folderId: f.id, tags: [], starred: !!c.starred, archived: false, sections: [], cardMoves: {} };
+    const m = { convId: c.id, folderId: f.id, tags: [], starred: !!c.starred, archived: false, sections: [], cardMoves: {}, boardCols: [] };
     S.meta.set(c.id, m);
     newMeta.push(m);
   }
@@ -559,13 +559,40 @@ export const resetCard = (convId, turnKey) =>
     return { cardMoves: c };
   });
 
+/**
+ * Columns made on the board itself, not by a section break — so a chat with
+ * no sections can still be arranged. Board-only, like card moves.
+ */
+export const boardColsOf = (convId) => metaOf(convId).boardCols || [];
+export async function addBoardCol(convId, title, moveKey = null) {
+  const id = `col-${uid()}`;
+  await setMeta([convId], (m) => ({
+    boardCols: [...(m.boardCols || []), { id, title }],
+    cardMoves: moveKey ? { ...(m.cardMoves || {}), [moveKey]: id } : (m.cardMoves || {}),
+  }));
+  return id;
+}
+export const renameBoardCol = (convId, id, title) =>
+  setMeta([convId], (m) => ({ boardCols: (m.boardCols || []).map((c) => (c.id === id ? { ...c, title } : c)) }));
+/** Remove a board column; its cards go back to their own sections. Returns
+    what it removed, so the caller can offer Undo. */
+export async function dropBoardCol(convId, id) {
+  const m = metaOf(convId);
+  const before = { boardCols: m.boardCols || [], cardMoves: m.cardMoves || {} };
+  await setMeta([convId], {
+    boardCols: before.boardCols.filter((c) => c.id !== id),
+    cardMoves: purgeMoves(before.cardMoves, new Set([id])),
+  });
+  return () => setMeta([convId], before);
+}
+
 /* ------------------------------------------------------------------- load */
 
 export async function load() {
   const [convs, meta, folders, smart] = await Promise.all(STORES.map((s) => STORE.all(s)));
   S.convs = convs.sort((a, b) =>
     String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
-  S.meta = new Map(meta.map((m) => [m.convId, { tags: [], sections: [], cardMoves: {}, ...m }]));
+  S.meta = new Map(meta.map((m) => [m.convId, { tags: [], sections: [], cardMoves: {}, boardCols: [], ...m }]));
   S.folders = folders;
   S.smart = smart;
   await repairFolders();

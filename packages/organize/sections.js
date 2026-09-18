@@ -82,12 +82,25 @@ export const BEGIN = '__begin';
  *
  * A moved turn keeps its place in chronological order *within* its new
  * section — moving is a change of section, never a change of reading order.
+ *
+ * `extra` are columns made on the board itself — `[{ id, title }]` — rather
+ * than section breaks. They have no turn of their own to start at, so they
+ * hold only what was moved into them, and they come after the real sections.
+ * They let a chat with no sections at all still be arranged: a board you
+ * cannot move anything on until you have gone and done something elsewhere
+ * is a board that looks broken.
+ *
+ * Every group returned carries `key`: the value a move targets.
  */
-export function applyMoves(turns, sections, moves) {
+export function applyMoves(turns, sections, moves, extra = []) {
   const base = group(turns, sections);
+  for (const g of base) g.key = g.startKey ?? BEGIN;
+  for (const c of extra) {
+    if (c?.id) base.push({ title: c.title || 'Untitled column', startKey: null, key: c.id, extra: true, turns: [] });
+  }
   if (!moves || !Object.keys(moves).length) return base;
 
-  const byKey = new Map(base.map((g) => [g.startKey ?? BEGIN, g]));
+  const byKey = new Map(base.map((g) => [g.key, g]));
   const index = new Map(turns.map((t, i) => [t, i]));
   const incoming = new Map(); // target startKey -> turns arriving, unsorted
 
@@ -95,7 +108,7 @@ export function applyMoves(turns, sections, moves) {
     g.turns = g.turns.filter((t) => {
       const key = turnKey(t);
       const target = key ? moves[key] : undefined;
-      if (target == null || target === (g.startKey ?? BEGIN) || !byKey.has(target)) return true;
+      if (target == null || target === g.key || !byKey.has(target)) return true;
       (incoming.get(target) ?? incoming.set(target, []).get(target)).push(t);
       return false;
     });

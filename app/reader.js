@@ -1,11 +1,12 @@
 /* ==========================================================================
    The reader: one conversation, in a centred column.
 
-   Four templates, switched from the top bar:
-     Transcript  every message, top to bottom
+   Templates, switched from the top bar:
+     Transcript  every message, top to bottom, as a chat
      Outline     one line per exchange, open the ones you want
-     Focus       one exchange at a time — the inspector is its list
-     Columns     one column per section, turns stacking down it
+     Focus       one exchange at a time, set as a page
+     Board       (`columns`) exchanges as cards in columns you arrange;
+                 a card opens in a pop-up, the "sheet"
 
    The inspector (inspector.js) is the navigator for all three, so the reader
    has no rail or ribbon of its own any more.
@@ -16,8 +17,11 @@ import * as SEC from '../packages/organize/sections.js';
 import {
   S, R, PREFS, metaOf, convById, mainPath, folderPath, sectionsOf, setSection, clearSection,
   dropSections, removeTag, openConv, blockText, revealFolder, cardMovesOf, moveCard, resetCard,
+  boardColsOf, addBoardCol, renameBoardCol, dropBoardCol,
 } from './core.js';
-import { $, el, icon, iconBtn, btn, menu, at, askText, confirmDialog, fmtDate, toast, picker } from './lib/dom.js';
+import {
+  $, $$, el, icon, iconBtn, btn, menu, at, askText, confirmDialog, fmtDate, toast, picker, floatOpen, closeFloat,
+} from './lib/dom.js';
 import { md } from './lib/md.js';
 import { movePicker, tagPicker, star, archive, remove, plural } from './actions.js';
 import { provName } from './explorer.js';
@@ -25,8 +29,8 @@ import { provName } from './explorer.js';
 export const TEMPLATES = {
   transcript: { label: 'Transcript', icon: 'rows', hint: 'Every message, top to bottom' },
   outline: { label: 'Outline', icon: 'outline', hint: 'One line per exchange — open the ones you want' },
-  focus: { label: 'Focus', icon: 'focus', hint: 'One exchange at a time · j / k to move' },
-  columns: { label: 'Columns', icon: 'columns', hint: 'One column per section — scroll sideways between topics' },
+  focus: { label: 'Focus', icon: 'focus', hint: 'One exchange at a time, as a page · j / k to move' },
+  columns: { label: 'Board', icon: 'columns', hint: 'Exchanges as cards in columns — arrange them, click one to read it' },
 };
 
 /* ---------------------------------------------------------------- blocks */
@@ -124,6 +128,7 @@ function renderMessage(msg, kids, ctx) {
       S.branchPick.set(msg.parentId, sibs[(idx + d + sibs.length) % sibs.length].id);
       R.reader();
       R.inspector();
+      ctx.onChange?.();
     };
     br.append(icon('branch'), iconBtn('chevL', 'Previous version', () => goB(-1)),
       el('span', null, `${idx + 1} / ${sibs.length}`), iconBtn('chevR', 'Next version', () => goB(1)));
@@ -132,7 +137,7 @@ function renderMessage(msg, kids, ctx) {
 
   // Starting a section is offered on your messages, where topics begin.
   if (msg.role === 'user' && ctx.turnKey && !ctx.startsSection) {
-    who.append(el('span', 'grow'), iconBtn('bookmark', 'Start a section here', () => newSection(ctx.convId, ctx.turnKey), 'hover'));
+    who.append(el('span', 'grow'), iconBtn('bookmark', 'Start a section here', async () => { await newSection(ctx.convId, ctx.turnKey); ctx.onChange?.(); }, 'hover'));
   }
   box.append(who);
 
@@ -240,6 +245,47 @@ function outline(col, groups, kids, ctx) {
   }
 }
 
+/**
+ * One exchange as a page: your question as its title, the answer as a
+ * document under it, and the answer's own headings as a way in. Focus shows
+ * this inline; the board shows it as a pop-up. It is what makes Focus read
+ * differently from Transcript, rather than being Transcript with less in it.
+ */
+function exchangePage(t, { n, total, where, kids, ctx }) {
+  const page = el('div', 'xpage');
+  const eyebrow = el('div', 'eyebrow');
+  eyebrow.append(el('span', null, `Exchange ${n + 1} of ${total}`));
+  if (where) eyebrow.append(el('span', null, '·'), el('span', null, where));
+  page.append(eyebrow);
+
+  const key = SEC.turnKey(t);
+  const tctx = { ...ctx, turnKey: key };
+  if (t.user) {
+    const q = renderMessage(t.user, kids, tctx);
+    // A pasted essay is not a title; only a question that reads as one gets
+    // set as one.
+    const len = (t.user.content || []).map(blockText).join(' ').length;
+    q.classList.add(len > 280 ? 'long' : 'title');
+    page.append(q);
+  }
+  const toc = el('nav', 'ptoc');
+  const answer = el('div', 'xanswer');
+  for (const m of t.replies) answer.append(renderMessage(m, kids, tctx));
+  page.append(toc, answer);
+
+  const hs = [...answer.querySelectorAll('.prose h1, .prose h2, .prose h3')];
+  if (hs.length >= 2) {
+    toc.append(el('span', 'ptl', 'In this answer'));
+    for (const h of hs) {
+      const b = el('button', 'pchip', h.textContent);
+      b.type = 'button';
+      b.onclick = () => h.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      toc.append(b);
+    }
+  } else toc.remove();
+  return page;
+}
+
 function focus(col, groups, kids, ctx) {
   const flat = groups.flatMap((g) => g.turns.map((t) => ({ t, sec: g })));
   if (!flat.length) return;
@@ -248,18 +294,28 @@ function focus(col, groups, kids, ctx) {
   const { t, sec } = flat[n];
   const key = SEC.turnKey(t);
 
-  const eyebrow = el('div', 'eyebrow');
-  eyebrow.append(el('span', null, `Exchange ${n + 1} of ${flat.length}`));
-  if (groups.length > 1) eyebrow.append(el('span', null, '·'), el('span', null, sec.title || 'Beginning'));
-  col.append(eyebrow);
+  // Where you are, always in view: one tick per exchange, a gap between
+  // sections, the ones behind you filled in. Click one to go there.
+  const strip = el('div', 'fstrip');
+  const ticks = el('div', 'fticks');
+  flat.forEach((f, k) => {
+    const b = el('button', `ftick${k === n ? ' on' : k < n ? ' done' : ''}${k && f.sec !== flat[k - 1].sec ? ' sb' : ''}`);
+    b.type = 'button';
+    b.title = `${k + 1}. ${f.t.user ? O.clip(O.plain(O.gist([f.t.user], 200)), 90) : '(continues)'}`;
+    b.onclick = () => goTurn(k);
+    ticks.append(b);
+  });
+  strip.append(ticks, el('span', 'fpos', `${n + 1} / ${flat.length}`));
+  col.append(strip);
 
   const wrap = el('div', 'focus');
   wrap.dataset.turn = n;
   S.turnEls = [];
   S.turnEls[n] = wrap;
-  for (const msg of [t.user, ...t.replies].filter(Boolean)) {
-    wrap.append(renderMessage(msg, kids, { ...ctx, turnKey: key, startsSection: sec.startKey === key }));
-  }
+  wrap.append(exchangePage(t, {
+    n, total: flat.length, where: groups.length > 1 ? sec.title || 'Beginning' : null,
+    kids, ctx: { ...ctx, startsSection: sec.startKey === key },
+  }));
   col.append(wrap);
 
   const nav = el('div', 'fnav');
@@ -278,145 +334,299 @@ function focus(col, groups, kids, ctx) {
   col.append(nav);
 }
 
-const DT_CARD = 'application/x-organizer-card';
+/* ------------------------------------------------------------------ sheet */
 
 /**
- * One column per section, turns stacking down it — the layout for "the main
- * thread was A→B→C, but A had follow-ups". Needs sections; with none, there is
- * only one column, which is not what this template is for, so it says so
- * rather than quietly rendering a single narrow list.
+ * An exchange, full size, over whatever you were looking at — how the board
+ * is read, since a card is a summary and a summary is not the answer.
  *
- * Cards can be dragged, or moved from their own ⋯, into another section. That
- * is a Columns-only override — `SEC.applyMoves` — layered on top of the real,
- * chronological grouping every other template reads; see its doc comment for
- * why a move must never reach those other views.
+ * Previous and next go in true conversation order, not board order: the board
+ * is where you file things, the order is what actually happened.
+ */
+let sheet = null;
+
+function currentTurns() {
+  const conv = convById(S.openId);
+  if (!conv) return null;
+  const { path, kids } = mainPath(conv);
+  const turns = O.turns(path);
+  return { conv, kids, turns, ctx: { convId: conv.id, assistant: provName(conv.provider), turns } };
+}
+
+export const sheetOpen = () => Boolean(sheet);
+export function closeSheet() { sheet?.close(); }
+
+export function openSheet(n) {
+  if (sheet) { sheet.go(n); return; }
+  const back = document.activeElement;
+  const veil = el('div', 'sheet-veil');
+  const panel = el('div', 'sheet');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-modal', 'true');
+  veil.append(panel);
+  let i = n;
+
+  const draw = () => {
+    const cur = currentTurns();
+    if (!cur || !cur.turns.length) { close(); return; }
+    const { conv, kids, turns, ctx } = cur;
+    i = Math.max(0, Math.min(i, turns.length - 1));
+    const t = turns[i];
+    const onBoard = S.template === 'columns';
+    const groups = onBoard ? boardOf(conv.id, turns) : SEC.group(turns, sectionsOf(conv.id));
+    const g = groups.find((x) => x.turns.includes(t));
+    const where = groups.length > 1 && g ? g.title || 'Beginning' : null;
+    const key = SEC.turnKey(t);
+
+    panel.textContent = '';
+    const top = el('div', 'sheet-top');
+    const prev = iconBtn('arrowL', 'Previous exchange  ←', () => go(i - 1));
+    const next = iconBtn('arrowR', 'Next exchange  →', () => go(i + 1));
+    prev.disabled = i === 0;
+    next.disabled = i === turns.length - 1;
+    top.append(prev, next, el('span', 'sheet-pos', `${i + 1} of ${turns.length}`), el('span', 'grow'));
+    if (onBoard && key) {
+      const mv = btn('columns', g?.title || 'Beginning', (e) => cardPicker(conv.id, turns, key, at(e), draw));
+      mv.title = 'Move this card to another column';
+      top.append(mv);
+    }
+    top.append(iconBtn('x', 'Close  Esc', close, 'sheet-x'));
+
+    const body = el('div', 'sheet-body');
+    body.append(exchangePage(t, {
+      n: i, total: turns.length, where, kids,
+      ctx: { ...ctx, startsSection: g?.startKey === key, onChange: draw },
+    }));
+    panel.append(top, body);
+
+    S.activeTurn = i;
+    R.markActive(i);
+    for (const c of $$('.colcard.on')) c.classList.remove('on');
+    S.turnEls[i]?.classList.add('on');
+  };
+  const go = (k) => { i = k; draw(); };
+
+  const onKey = (e) => {
+    if (document.querySelector('dialog[open]')) return;
+    const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '');
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      if (floatOpen()) closeFloat(); else close();
+    } else if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      if (e.key === 'ArrowLeft' || e.key === 'k') { e.preventDefault(); e.stopPropagation(); go(i - 1); }
+      else if (e.key === 'ArrowRight' || e.key === 'j') { e.preventDefault(); e.stopPropagation(); go(i + 1); }
+    }
+  };
+  function close() {
+    document.removeEventListener('keydown', onKey, true);
+    veil.remove();
+    sheet = null;
+    // Leave the card you were reading in view, so closing puts you back on
+    // the board at what you just read.
+    S.turnEls[i]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    (S.turnEls[i]?.querySelector('.cchead') || back)?.focus?.({ preventScroll: true });
+  }
+  veil.addEventListener('mousedown', (e) => { if (e.target === veil) close(); });
+  document.addEventListener('keydown', onKey, true);
+  sheet = { close, go };
+  document.body.append(veil);
+  draw();
+  panel.querySelector('.sheet-x')?.focus({ preventScroll: true });
+}
+
+/* ------------------------------------------------------------------ board */
+
+const DT_CARD = 'application/x-organizer-card';
+const NEW_COL = '__new';
+
+/** The board's columns: sections, then any made on the board, with moves applied. */
+const boardOf = (convId, turns) =>
+  SEC.applyMoves(turns, sectionsOf(convId), cardMovesOf(convId), boardColsOf(convId));
+
+/** File a card under a column. Back to its own section clears the move
+    rather than recording one that changes nothing. */
+async function fileCard(convId, turns, key, target) {
+  const natural = SEC.group(turns, sectionsOf(convId))
+    .find((g) => g.turns.some((t) => SEC.turnKey(t) === key));
+  const naturalKey = natural ? natural.startKey ?? SEC.BEGIN : SEC.BEGIN;
+  const before = cardMovesOf(convId)[key];
+  if (target === naturalKey) await resetCard(convId, key); else await moveCard(convId, key, target);
+  R.reader();
+  R.inspector();
+  const name = boardOf(convId, turns).find((g) => g.key === target)?.title || 'Beginning';
+  toast(`Moved to “${name}”`, {
+    label: 'Undo',
+    run: async () => {
+      if (before == null) await resetCard(convId, key); else await moveCard(convId, key, before);
+      R.reader(); R.inspector();
+    },
+  });
+}
+
+async function newColumn(convId, key = null) {
+  const title = await askText({
+    title: key ? 'Move to a new column' : 'New column',
+    body: 'Columns made here arrange this board only. The conversation, and every other view of it, stay as they are.',
+    placeholder: 'Column name', ok: 'Create',
+  });
+  if (!title) return;
+  const id = await addBoardCol(convId, title, key);
+  R.reader();
+  R.inspector();
+  toast(`Created “${title}”`, {
+    label: 'Undo',
+    run: async () => { await dropBoardCol(convId, id); R.reader(); R.inspector(); },
+  });
+}
+
+function cardPicker(convId, turns, key, anchor, after) {
+  const board = boardOf(convId, turns);
+  const here = board.find((g) => g.turns.some((t) => SEC.turnKey(t) === key))?.key;
+  const items = board.filter((g) => g.key !== here)
+    .map((g) => ({ label: g.title || 'Beginning', value: g.key, icon: 'columns' }));
+  items.push({ label: 'New column…', value: NEW_COL, icon: 'plus' });
+  picker({
+    items, anchor, placeholder: 'Move to a column…',
+    onPick: async (v) => {
+      if (v === NEW_COL) await newColumn(convId, key); else await fileCard(convId, turns, key, v);
+      after?.();
+    },
+  });
+}
+
+function columnHead(convId, g) {
+  const head = el('div', 'colhead');
+  head.append(el('span', 'st', g.title || 'Beginning'), el('span', 'sn', String(g.turns.length)));
+  if (g.extra) {
+    head.append(
+      iconBtn('pencil', 'Rename column', async () => {
+        const t = await askText({ title: 'Rename column', value: g.title, ok: 'Rename' });
+        if (!t) return;
+        await renameBoardCol(convId, g.key, t);
+        R.reader();
+      }, 'hover'),
+      iconBtn('x', 'Remove column — its cards go back to their sections', async () => {
+        const undo = await dropBoardCol(convId, g.key);
+        R.reader(); R.inspector();
+        toast(`Removed “${g.title}”`, { label: 'Undo', run: async () => { await undo(); R.reader(); R.inspector(); } });
+      }, 'hover'));
+  } else if (g.startKey) {
+    head.append(
+      iconBtn('pencil', 'Rename section', () => renameSection(convId, g.startKey, g.title), 'hover'),
+      iconBtn('x', 'Remove this section break', () => removeSection(convId, g.startKey), 'hover'));
+  }
+  return head;
+}
+
+/** Make an element somewhere a card can be dropped. */
+function dropTarget(node, onDrop) {
+  node.addEventListener('dragover', (e) => {
+    if (!e.dataTransfer.types.includes(DT_CARD)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    node.classList.add('drop');
+  });
+  node.addEventListener('dragleave', (e) => {
+    if (!node.contains(e.relatedTarget)) node.classList.remove('drop');
+  });
+  node.addEventListener('drop', (e) => {
+    node.classList.remove('drop');
+    if (!e.dataTransfer.types.includes(DT_CARD)) return;
+    e.preventDefault();
+    const key = e.dataTransfer.getData(DT_CARD);
+    if (key) onDrop(key);
+  });
+}
+
+/**
+ * The board: one column per section, cards stacking down it — the layout for
+ * "the main thread was A→B→C, but A had follow-ups".
+ *
+ * A card is a summary; click it to read the exchange in full, in a pop-up.
+ * Drag it, or use its move button, to file it under another column — or into
+ * a new one, which is how a chat with no sections gets arranged at all. That
+ * is a board-only override (`SEC.applyMoves`) on top of the real grouping
+ * every other view reads; see its doc comment for why it must stay that way.
+ * Within a column cards stay in conversation order, and keep their numbers.
  */
 function columns(col, groups, kids, ctx) {
-  const total = groups.reduce((n, g) => n + g.turns.length, 0);
+  const convId = ctx.convId;
+  const board = boardOf(convId, ctx.turns);
+  const total = ctx.turns.length;
+
   const bar = el('div', 'obar');
-  bar.append(el('span', null, groups.length > 1
-    ? `${plural(groups.length, 'section')} · ${plural(total, 'exchange')}`
-    : plural(total, 'exchange')));
+  bar.append(el('span', null, `${plural(board.length, 'column')} · ${plural(total, 'exchange')}`));
+  bar.append(el('span', 'bhint', '· click a card to read it, drag it to file it elsewhere'));
   bar.append(el('span', 'grow'));
-  if (groups.length > 1) {
-    bar.append(iconBtn(S.colsTransposed ? 'columns' : 'swap',
-      S.colsTransposed ? 'Lay sections out as columns' : 'Lay sections out as rows',
-      () => { S.colsTransposed = !S.colsTransposed; PREFS.save(); R.reader(); }));
-  }
+  bar.append(btn('plus', 'New column', () => newColumn(convId), 'ghost'));
+  bar.append(iconBtn(S.colsTransposed ? 'columns' : 'swap',
+    S.colsTransposed ? 'Lay columns out side by side' : 'Stack columns as rows',
+    () => { S.colsTransposed = !S.colsTransposed; PREFS.save(); R.reader(); }));
   col.append(bar);
 
-  if (groups.length < 2) {
-    col.append(el('div', 'note',
-      'This template shows one column per section. Bookmark a message to start one — the button appears when you hover it.'));
-    // Nothing to drag a card into yet, so fall through and render the one
-    // column plainly rather than wiring up drag-and-drop for a single target.
-  }
-
-  const convId = ctx.convId;
-  const canMove = groups.length > 1;
-  const board = canMove ? SEC.applyMoves(ctx.turns, sectionsOf(convId), cardMovesOf(convId)) : groups;
-
-  // Two lookups built from the *natural* grouping, for the "moved" label and
-  // for telling a genuine drop (new section) from dropping a card back where
-  // it already is.
-  const naturalOf = new Map();   // turn -> its natural section key
-  const titleOf = new Map();     // section key -> its title, for that label
+  const naturalOf = new Map();
+  const titleOf = new Map();
   for (const g of groups) {
     const gk = g.startKey ?? SEC.BEGIN;
     titleOf.set(gk, g.title || 'Beginning');
     for (const t of g.turns) naturalOf.set(t, gk);
   }
-  const homeOf = new Map();      // turn key -> its CURRENT section key, i.e. after moves
-  for (const g of board) { const gk = g.startKey ?? SEC.BEGIN; for (const t of g.turns) homeOf.set(SEC.turnKey(t), gk); }
   const trueIndex = new Map(ctx.turns.map((t, k) => [t, k]));
 
-  const doMove = async (turnKey, target) => {
-    await moveCard(convId, turnKey, target);
-    R.reader();
-    R.inspector();
-    toast('Moved to another section', {
-      label: 'Undo',
-      run: async () => { await resetCard(convId, turnKey); R.reader(); R.inspector(); },
-    });
-  };
-  const openMovePicker = (turnKey, here, anchor) => {
-    const items = groups
-      .map((g) => ({ label: g.title || 'Beginning', value: g.startKey ?? SEC.BEGIN, icon: 'columns' }))
-      .filter((it) => it.value !== here);
-    if (items.length) picker({ items, anchor, placeholder: 'Move to a section…', onPick: (v) => doMove(turnKey, v) });
-  };
-
   const wrap = el('div', `cols${S.colsTransposed ? ' transposed' : ''}`);
-  for (const sec of board) {
-    const here = sec.startKey ?? SEC.BEGIN;
-    const section = el('div', 'colsec');
-    const head = el('div', 'colhead');
-    head.append(el('span', 'st', sec.title || 'Beginning'), el('span', 'sn', plural(sec.turns.length, 'exchange')));
-    section.append(head);
+  for (const g of board) {
+    const section = el('div', `colsec${g.extra ? ' extra' : ''}`);
+    section.append(columnHead(convId, g));
+    const list = el('div', 'collist');
+    dropTarget(section, (key) => {
+      if (!g.turns.some((t) => SEC.turnKey(t) === key)) fileCard(convId, ctx.turns, key, g.key);
+    });
 
-    if (canMove) {
-      section.addEventListener('dragover', (e) => {
-        if (!e.dataTransfer.types.includes(DT_CARD)) return;
-        e.preventDefault();
-        section.classList.add('drop');
-      });
-      section.addEventListener('dragleave', () => section.classList.remove('drop'));
-      section.addEventListener('drop', (e) => {
-        section.classList.remove('drop');
-        if (!e.dataTransfer.types.includes(DT_CARD)) return;
-        e.preventDefault();
-        const turnKey = e.dataTransfer.getData(DT_CARD);
-        if (turnKey && homeOf.get(turnKey) !== here) doMove(turnKey, here);
-      });
-    }
-
-    if (!sec.turns.length) section.append(el('div', 'colempty', 'Nothing here — drag a card in.'));
-
-    for (const t of sec.turns) {
+    if (!g.turns.length) list.append(el('div', 'colempty', 'Drop a card here'));
+    for (const t of g.turns) {
       const n = trueIndex.get(t);
       const key = SEC.turnKey(t);
-      const open = S.openTurns.has(n);
-      const card = el('div', `colcard${open ? ' open' : ''}`);
+      const card = el('div', `colcard${sheetOpen() && n === S.activeTurn ? ' on' : ''}`);
       card.dataset.turn = n;
       S.turnEls[n] = card;
 
-      if (canMove && key) {
-        const moved = naturalOf.get(t) !== here;
-        const cbar = el('div', 'cbar');
-        cbar.append(moved
-          ? el('span', 'cfrom', `From ${titleOf.get(naturalOf.get(t)) || 'Beginning'}`)
-          : el('span', 'grow'));
-        cbar.append(iconBtn('columns', 'Move to another section', (e) => openMovePicker(key, here, at(e))));
-        // Only the strip is the drag handle, not the whole card — an open
-        // card's body is prose you may want to select and copy, and a
-        // draggable ancestor would hijack that drag into moving the card.
-        cbar.draggable = true;
-        cbar.title = 'Drag to move to another section';
-        cbar.addEventListener('dragstart', (e) => {
-          e.dataTransfer.setData(DT_CARD, key);
-          e.dataTransfer.effectAllowed = 'move';
-        });
-        card.append(cbar);
+      const open = el('button', 'cchead');
+      open.type = 'button';
+      open.title = 'Read this exchange';
+      open.append(el('span', 'onum', String(n + 1)), turnSummary(t, 140));
+      open.onclick = () => openSheet(n);
+      card.append(open);
+      if (naturalOf.get(t) !== g.key) {
+        card.append(el('div', 'cfrom', `from ${titleOf.get(naturalOf.get(t)) || 'Beginning'}`));
       }
 
-      const chead = el('button', 'cchead');
-      chead.type = 'button';
-      chead.append(el('span', 'onum', String(n + 1)), turnSummary(t, 90), icon('chevR'));
-      chead.onclick = () => {
-        if (S.openTurns.has(n)) S.openTurns.delete(n); else S.openTurns.add(n);
-        R.reader();
-      };
-      card.append(chead);
-      if (open) {
-        const detail = el('div', 'odetail');
-        const tctx = { ...ctx, turnKey: key, startsSection: sec.startKey === key };
-        for (const msg of [t.user, ...t.replies].filter(Boolean)) detail.append(renderMessage(msg, kids, tctx));
-        card.append(detail);
+      if (key) {
+        card.append(iconBtn('columns', 'Move to another column', (e) => cardPicker(convId, ctx.turns, key, at(e)), 'cmove'));
+        // The whole card is the handle. It never shows selectable prose — that
+        // is in the pop-up — so there is no text selection for a drag to steal.
+        card.draggable = true;
+        card.addEventListener('dragstart', (e) => {
+          e.dataTransfer.setData(DT_CARD, key);
+          e.dataTransfer.effectAllowed = 'move';
+          card.classList.add('dragging');
+          wrap.classList.add('dragging');
+        });
+        card.addEventListener('dragend', () => { card.classList.remove('dragging'); wrap.classList.remove('dragging'); });
       }
-      section.append(card);
+      list.append(card);
     }
+    section.append(list);
     wrap.append(section);
   }
+
+  // Always somewhere to start a new column, and to drop a card to do it.
+  const add = el('button', 'colnew');
+  add.type = 'button';
+  add.append(icon('plus'), el('span', 'cn-t', 'New column'), el('span', 'cn-sub', 'or drop a card here'));
+  add.onclick = () => newColumn(convId);
+  dropTarget(add, (key) => newColumn(convId, key));
+  wrap.append(add);
   col.append(wrap);
 }
 
@@ -447,7 +657,13 @@ export function goTurn(i) {
     $('.rd-scroll')?.scrollTo({ top: 0 });
     return;
   }
-  if ((S.template === 'outline' || S.template === 'columns') && !S.openTurns.has(n)) {
+  if (S.template === 'columns') {
+    // On the board, going to an exchange means reading it.
+    S.turnEls[n]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    openSheet(n);
+    return;
+  }
+  if (S.template === 'outline' && !S.openTurns.has(n)) {
     S.openTurns.add(n);
     R.reader();
   }
@@ -455,9 +671,7 @@ export function goTurn(i) {
   if (!node) return;
   // Columns scrolls in two directions — centre the target column as well as
   // bringing the card into view, or the jump can land off to the side.
-  node.scrollIntoView(S.template === 'columns'
-    ? { block: 'nearest', inline: 'center', behavior: 'smooth' }
-    : { block: 'start', behavior: 'smooth' });
+  node.scrollIntoView({ block: 'start', behavior: 'smooth' });
   S.activeTurn = n;
   R.markActive(n);
 }
@@ -619,13 +833,20 @@ export function renderReader() {
   const conv = convById(S.openId);
   const same = host.dataset.conv === (conv?.id || '') && host.dataset.tmpl === S.template;
   const keep = same ? ($('.rd-scroll', host)?.scrollTop || 0) : 0;
+  // The board scrolls inside itself, both ways and per column. A move re-renders
+  // it, and a re-render must not throw you back to the first column.
+  const board = same && $('.cols', host);
+  const keepBoard = board ? {
+    x: board.scrollLeft, y: board.scrollTop,
+    cols: $$('.colsec', board).map((c) => [c.scrollLeft, $('.collist', c)?.scrollTop || 0]),
+  } : null;
 
   host.textContent = '';
   host.dataset.conv = conv?.id || '';
   host.dataset.tmpl = S.template;
   host.append(topbar(conv));
 
-  const scroll = el('div', 'rd-scroll');
+  const scroll = el('div', S.template === 'columns' && conv ? 'rd-scroll board' : 'rd-scroll');
   host.append(scroll);
   S.turnEls = [];
   if (!conv) { scroll.append(emptyReader()); return; }
@@ -667,6 +888,16 @@ export function renderReader() {
 
   scroll.addEventListener('scroll', trackActive, { passive: true });
   scroll.scrollTop = keep;
+  const cols = keepBoard && $('.cols', host);
+  if (cols) {
+    cols.scrollLeft = keepBoard.x; cols.scrollTop = keepBoard.y;
+    $$('.colsec', cols).forEach((c, k) => {
+      const v = keepBoard.cols[k];
+      if (!v) return;
+      c.scrollLeft = v[0];
+      const l = $('.collist', c); if (l) l.scrollTop = v[1];
+    });
+  }
   if (!same) S.activeTurn = S.template === 'focus' ? S.focusAt : 0;
 }
 
