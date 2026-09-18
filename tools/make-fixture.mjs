@@ -24,13 +24,26 @@ function msg(role, parentId, content) {
   return { ...m, stableKey: m.id, status: 'complete', hidden: false };
 }
 
-function conv({ provider = 'claude', title, project, model, turns, branchAt, gapDays = 2 }) {
+// Messages on branches off the current path. Numbered apart from the rest, so
+// adding a branch here does not renumber every conversation after it — and a
+// re-import of the regenerated file still matches what is already imported.
+let bseq = 0;
+function bmsg(role, parentId, content, after) {
+  const n = ++bseq;
+  const m = { id: `b-${n.toString(36).padStart(4, '0')}`, parentId, role,
+    createdAt: new Date(Date.parse(after) + n * 60_000).toISOString(), content };
+  return { ...m, stableKey: m.id, status: 'complete', hidden: false };
+}
+
+function conv({ provider = 'claude', title, project, model, turns, branchAt, regen, edit, gapDays = 2 }) {
   clock += gapDays * 86_400_000;
   const cid = id('conv');
   const messages = [];
   let parent = null;
   let branchParent = null;
+  let editParent;
   for (const [i, [q, ...a]] of turns.entries()) {
+    if (edit && i === edit.at) editParent = parent;
     const u = msg('user', parent, Array.isArray(q) ? q : [text(q)]);
     const r = msg('assistant', u.id, a);
     messages.push(u, r);
@@ -39,9 +52,21 @@ function conv({ provider = 'claude', title, project, model, turns, branchAt, gap
   }
   // A regenerate: a second reply to the same question, off the current path.
   if (branchParent) {
-    messages.push(msg('assistant', branchParent, [text(
+    messages.push(msg('assistant', branchParent, regen || [text(
       'A shorter take on the same question, from a regenerate. It is a sibling of the reply ' +
       'above, so the reader has to be able to show both.')]));
+  }
+  // An edited question: a second version of turn `edit.at`, which then went on
+  // for a few turns of its own before you came back to the original.
+  if (edit && editParent !== undefined) {
+    let at = messages.at(-1).createdAt;
+    let par = editParent;
+    for (const [q, ...a] of edit.turns) {
+      const u = bmsg('user', par, [text(q)], at);
+      const r = bmsg('assistant', u.id, a, u.createdAt);
+      messages.push(u, r);
+      par = r.id; at = r.createdAt;
+    }
   }
   return {
     schemaVersion: '0.2', kind: 'conversation', id: cid, provider,
@@ -62,6 +87,7 @@ const prose = (n, topic) => Array.from({ length: n }, (_, i) =>
 const conversations = [
   conv({
     title: 'Small oscillations — Landau & Lifshitz §21', project: 'Physics', branchAt: 1,
+    regen: [text('Because of **power counting**. $\\dot x$ is small, so $a_{ik}(q)\\,\\dot x_i \\dot x_k$ is already second order. Keeping more terms of $a_{ik}$ only adds third-order corrections. In $U$, the $x_i x_k$ terms are the leading order that does anything.')],
     turns: [
       ['Walk me through why the Lagrangian for small oscillations is a quadratic form.',
         think('Expand U about the minimum', 'Linear term vanishes at equilibrium', 'Kinetic term evaluated at q0'),
@@ -93,6 +119,12 @@ const conversations = [
   }),
   conv({
     title: 'Rust: why does the borrow checker reject this?', project: 'Coding',
+    edit: { at: 1, turns: [
+      ['What if I need a reference that lives across the push?',
+        text('Then the borrow checker is right to stop you: no reference into the vector can survive a reallocation. Store an index, or put the elements behind `Rc` so the vector holds pointers and a reallocation moves only those.')],
+      ['Show the Rc version.',
+        code('rust', 'use std::rc::Rc;\nlet mut v = vec![Rc::new(String::from("a"))];\nlet first = Rc::clone(&v[0]);\nv.push(Rc::new(String::from("b")));\nprintln!("{first}");')],
+    ] },
     turns: [
       [[text('This fails to compile and I do not see why:'),
         code('rust', 'let mut v = vec![1, 2, 3];\nlet first = &v[0];\nv.push(4);\nprintln!("{first}");')],

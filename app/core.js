@@ -106,6 +106,7 @@ export const S = {
   sel: new Set(),
   lastClicked: null,      // anchor for shift-click ranges
   branchPick: new Map(),
+  compare: new Map(),     // Branches: fork parentId -> version shown against it, or "" for none
 
   // Inline editing in the tree: which row is showing an input right now.
   editing: null,          // {kind: 'new-folder', parentId} | {kind: 'rename-folder', id} | {kind: 'rename-tag', tag}
@@ -132,6 +133,7 @@ export const S = {
 export function openConv(id) {
   S.openId = id;
   S.branchPick.clear();
+  S.compare.clear();
   S.focusAt = 0;
   S.activeTurn = 0;
   S.outlineFilter = '';

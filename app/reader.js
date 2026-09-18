@@ -5,6 +5,7 @@
      Transcript  every message, top to bottom, as a chat
      Outline     one line per exchange, open the ones you want
      Focus       one exchange at a time, set as a page
+     Branches    the path down the page, other versions beside it, diffed
      Board       (`columns`) exchanges as cards in columns you arrange;
                  a card opens in a pop-up, the "sheet"
 
@@ -14,6 +15,8 @@
 
 import * as O from '../packages/organize/outline.js';
 import * as SEC from '../packages/organize/sections.js';
+import * as BR from '../packages/organize/branches.js';
+import { diffWords } from '../packages/organize/diff.js';
 import {
   S, R, PREFS, metaOf, convById, mainPath, folderPath, sectionsOf, setSection, clearSection,
   dropSections, removeTag, openConv, blockText, revealFolder, cardMovesOf, moveCard, resetCard,
@@ -30,6 +33,7 @@ export const TEMPLATES = {
   transcript: { label: 'Transcript', icon: 'rows', hint: 'Every message, top to bottom' },
   outline: { label: 'Outline', icon: 'outline', hint: 'One line per exchange — open the ones you want' },
   focus: { label: 'Focus', icon: 'focus', hint: 'One exchange at a time, as a page · j / k to move' },
+  branches: { label: 'Branches', icon: 'branch', hint: 'Every regenerate and edit, side by side, with what changed' },
   columns: { label: 'Board', icon: 'columns', hint: 'Exchanges as cards in columns — arrange them, click one to read it' },
 };
 
@@ -132,6 +136,16 @@ function renderMessage(msg, kids, ctx) {
     };
     br.append(icon('branch'), iconBtn('chevL', 'Previous version', () => goB(-1)),
       el('span', null, `${idx + 1} / ${sibs.length}`), iconBtn('chevR', 'Next version', () => goB(1)));
+    if (S.template !== 'branches') {
+      br.append(btn(null, 'Compare', () => {
+        S.template = 'branches';
+        PREFS.save();
+        closeSheet();
+        R.reader();
+        R.inspector();
+        document.querySelector(`.fork[data-parent="${CSS.escape(msg.parentId ?? '')}"]`)?.scrollIntoView({ block: 'center' });
+      }, 'ghost bcmp'));
+    }
     who.append(br);
   }
 
@@ -630,6 +644,153 @@ function columns(col, groups, kids, ctx) {
   col.append(wrap);
 }
 
+/* --------------------------------------------------------------- branches */
+
+/** The words of a message worth comparing: its prose and code, not its
+    thinking or tool calls, which differ between any two runs. */
+const comparable = (m) => (m?.content || [])
+  .filter((b) => b.type === 'text' || b.type === 'code')
+  .map((b) => b.text || '').join('\n\n');
+
+function follow(f, v) {
+  const prev = S.branchPick.get(f.parentId);
+  S.branchPick.set(f.parentId, v.msg.id);
+  R.reader();
+  R.inspector();
+  toast(`Now reading version ${v.n}`, {
+    label: 'Undo',
+    run: () => {
+      if (prev) S.branchPick.set(f.parentId, prev); else S.branchPick.delete(f.parentId);
+      R.reader(); R.inspector();
+    },
+  });
+}
+
+function diffView(a, b) {
+  const box = el('div', 'fdiff');
+  const head = el('div', 'fdh');
+  head.append(el('span', 'fdt', `What changed from version ${a.n} to version ${b.n}`), el('span', 'grow'));
+  const leg = el('span', 'fleg');
+  leg.append(el('del', null, 'removed'), el('ins', null, 'added'));
+  head.append(leg);
+  box.append(head);
+
+  const d = diffWords(comparable(a.msg), comparable(b.msg));
+  if (d.same < 0.15) {
+    box.append(el('div', 'fdnote',
+      'These two versions have almost nothing in common, so a word-by-word comparison would be one long deletion and one long insertion. Read them side by side above instead.'));
+    return box;
+  }
+  const body = el('div', 'fdbody');
+  for (const o of d.ops) body.append(o.op === '=' ? document.createTextNode(o.text) : el(o.op === '-' ? 'del' : 'ins', null, o.text));
+  box.append(body);
+  box.append(el('div', 'fdnote', `${Math.round(d.same * 100)}% unchanged`));
+  return box;
+}
+
+function forkBlock(f, kids) {
+  const box = el('div', 'fork');
+  box.dataset.parent = f.parentId ?? '';
+  const head = el('div', 'fkh');
+  head.append(icon('branch'), el('span', null,
+    `${f.versions.length} versions of ${f.role === 'user' ? 'your question' : 'the reply'}`));
+  box.append(head);
+
+  // Which version the comparison is against. Open by default: seeing what
+  // changed is the reason to come here. Closing it is remembered per fork.
+  const others = f.versions.filter((v) => !v.onPath);
+  const pick = S.compare.has(f.parentId) ? S.compare.get(f.parentId) : others[0]?.msg.id;
+  const base = f.versions.find((v) => v.onPath);
+  const against = others.find((v) => v.msg.id === pick) || null;
+
+  const track = el('div', 'ftrack');
+  for (const v of f.versions) {
+    const card = el('div', `fver${v.onPath ? ' on' : ''}${against?.msg.id === v.msg.id ? ' cmp' : ''}`);
+    const vh = el('div', 'fvh');
+    vh.append(el('span', 'fvn', `Version ${v.n}`));
+    if (v.onPath) vh.append(el('span', 'fvtag', 'Showing'));
+    vh.append(el('span', 'grow'), el('span', 'fvd', fmtDate(v.msg.createdAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })));
+    card.append(vh);
+
+    const body = el('div', 'fvbody');
+    for (const b of v.msg.content || []) body.append(renderBlock(b));
+    // An edited question is known by where it led, not just by its wording.
+    if (f.role === 'user') {
+      const reply = (kids.get(v.msg.id) || []).at(-1);
+      const g = reply && O.gist([reply], 220);
+      if (g) body.append(el('div', 'fvreply', g));
+    }
+    card.append(body);
+
+    const foot = el('div', 'fvf');
+    foot.append(el('span', 'fva', v.after ? `then ${plural(v.after, 'more message')}` : 'ends here'), el('span', 'grow'));
+    const more = btn(null, 'Show all', () => {
+      const full = card.classList.toggle('full');
+      more.lastChild.textContent = full ? 'Show less' : 'Show all';
+    }, 'ghost');
+    foot.append(more);
+    if (!v.onPath) {
+      if (others.length > 1 || !against) {
+        foot.append(btn(null, against?.msg.id === v.msg.id ? 'Comparing' : 'Compare', () => {
+          S.compare.set(f.parentId, v.msg.id); R.reader();
+        }, 'ghost'));
+      }
+      foot.append(btn('branch', 'Follow this version', () => follow(f, v)));
+    }
+    card.append(foot);
+    track.append(card);
+  }
+  box.append(track);
+
+  if (against && base) {
+    const d = diffView(base, against);
+    d.querySelector('.fdh').append(iconBtn('x', 'Hide the comparison', () => { S.compare.set(f.parentId, ''); R.reader(); }));
+    box.append(d);
+  }
+  return box;
+}
+
+/**
+ * The conversation's real shape: the path you are reading runs down the page,
+ * and wherever a message has other versions — a regenerate, an edit — they
+ * sit side by side at that point, with what changed between them. Built only
+ * from the captured tree; nothing here is inferred.
+ */
+function branches(col, groups, kids, ctx) {
+  const fs = BR.forks(ctx.path, kids);
+  const turnOf = new Map();
+  ctx.turns.forEach((t, i) => { for (const m of [t.user, ...t.replies]) if (m) turnOf.set(m.id, i); });
+  const at = new Map();
+  for (const f of fs) {
+    const i = turnOf.get(ctx.path[f.at].id);
+    (at.get(i) ?? at.set(i, []).get(i)).push(f);
+  }
+
+  const bar = el('div', 'obar');
+  bar.append(el('span', null, fs.length
+    ? `${plural(fs.length, 'fork')} · ${plural(ctx.turns.length, 'exchange')} on the path you are reading`
+    : plural(ctx.turns.length, 'exchange')));
+  col.append(bar);
+  if (!fs.length) {
+    col.append(el('div', 'note',
+      'Nothing branches here. A fork appears when you regenerate a reply or edit a question — then every version shows up here side by side, with what changed between them.'));
+  }
+
+  const spine = el('div', 'bspine');
+  ctx.turns.forEach((t, i) => {
+    const row = el('button', `brow${at.has(i) ? ' forked' : ''}`);
+    row.type = 'button';
+    row.title = 'Read this exchange';
+    row.dataset.turn = i;
+    row.append(el('span', 'onum', String(i + 1)), turnSummary(t, 160));
+    row.onclick = () => openSheet(i);
+    S.turnEls[i] = row;
+    spine.append(row);
+    for (const f of at.get(i) || []) spine.append(forkBlock(f, kids));
+  });
+  col.append(spine);
+}
+
 /** The one line that stands in for a whole exchange. */
 export function turnSummary(t, width = 160) {
   const mid = el('span', 'osum');
@@ -851,7 +1012,7 @@ export function renderReader() {
   S.turnEls = [];
   if (!conv) { scroll.append(emptyReader()); return; }
 
-  const col = el('article', S.template === 'columns' ? 'rd-col wide' : 'rd-col');
+  const col = el('article', S.template === 'columns' ? 'rd-col wide' : S.template === 'branches' ? 'rd-col mid' : 'rd-col');
   scroll.append(col);
   const { path, kids, rootCount } = mainPath(conv);
   col.append(header(conv, path));
@@ -883,8 +1044,8 @@ export function renderReader() {
     col.append(n);
   }
 
-  const ctx = { convId: conv.id, assistant: provName(conv.provider), turns };
-  ({ transcript, outline, focus, columns }[S.template] || transcript)(col, groups, kids, ctx);
+  const ctx = { convId: conv.id, assistant: provName(conv.provider), turns, path };
+  ({ transcript, outline, focus, branches, columns }[S.template] || transcript)(col, groups, kids, ctx);
 
   scroll.addEventListener('scroll', trackActive, { passive: true });
   scroll.scrollTop = keep;

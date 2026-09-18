@@ -13,6 +13,7 @@
   --danger: #c4332b; --danger-bg: rgba(196, 51, 43, .08);
   --mark: rgba(255, 196, 0, .38);
   --claude: #c96442; --chatgpt: #10a37f;
+  --ins: #0d6b4f; --ins-bg: rgba(16, 163, 127, .14); --del: #a4271f; --del-bg: rgba(196, 51, 43, .10);
   --shadow: 0 10px 30px rgba(0, 0, 0, .12), 0 2px 8px rgba(0, 0, 0, .06);
   --r: 6px;
   --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Inter, system-ui, sans-serif;
@@ -30,6 +31,7 @@
     --accent: #7aa2ff; --on-accent: #0d1220;
     --danger: #ff7a70; --danger-bg: rgba(255, 122, 112, .10);
     --mark: rgba(255, 196, 0, .28);
+    --ins: #6fdcb4; --ins-bg: rgba(80, 200, 150, .16); --del: #ff9a91; --del-bg: rgba(255, 122, 112, .14);
     --shadow: 0 12px 34px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .35);
     color-scheme: dark;
   }
@@ -43,6 +45,7 @@
   --accent: #7aa2ff; --on-accent: #0d1220;
   --danger: #ff7a70; --danger-bg: rgba(255, 122, 112, .10);
   --mark: rgba(255, 196, 0, .28);
+  --ins: #6fdcb4; --ins-bg: rgba(80, 200, 150, .16); --del: #ff9a91; --del-bg: rgba(255, 122, 112, .14);
   --shadow: 0 12px 34px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .35);
   color-scheme: dark;
 }
@@ -430,6 +433,71 @@ input.inline {
 .fbtn .fl { color: var(--fg-3); font-size: 12px; }
 .fbtn .fq { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fbtn .i { color: var(--fg-3); }
+
+/* --- branches template --- */
+/* Wider than prose, narrower than the board: two versions side by side need
+   room, but each is still something you read. */
+.rd-col.mid { max-width: 1120px; }
+.bspine { position: relative; padding-left: 14px; }
+.bspine::before {
+  content: ''; position: absolute; left: 4px; top: 8px; bottom: 8px; width: 2px;
+  background: var(--line); border-radius: 1px;
+}
+.brow {
+  position: relative; display: flex; align-items: flex-start; gap: 10px; width: 100%;
+  padding: 10px 8px; border: 0; background: none; text-align: left; border-radius: var(--r);
+}
+.brow::before {
+  content: ''; position: absolute; left: -14px; top: 16px; width: 10px; height: 10px; border-radius: 50%;
+  background: var(--bg); border: 2px solid var(--line-2);
+}
+.brow.forked::before { border-color: var(--accent); }
+.brow:hover { background: var(--hover); }
+.brow .og { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+.fork { margin: 2px 0 18px 30px; }
+.fkh { display: flex; align-items: center; gap: 6px; color: var(--accent); font-size: 12px; font-weight: 600; margin: 0 0 8px; }
+.fkh .i { width: 14px; height: 14px; }
+.ftrack {
+  display: grid; grid-auto-flow: column; grid-auto-columns: minmax(300px, 1fr); gap: 10px;
+  overflow-x: auto; padding-bottom: 4px;
+}
+.fver {
+  display: flex; flex-direction: column; min-width: 0;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+.fver.on { border-color: var(--line-2); background: var(--bg-side); }
+.fver.cmp { box-shadow: 0 0 0 1px var(--accent); border-color: var(--accent); }
+.fvh { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border-bottom: 1px solid var(--line); flex: none; }
+.fvn { font-weight: 600; font-size: 12.5px; }
+.fvtag { font-size: 11px; color: var(--fg-2); background: var(--bg-sunk); border-radius: 999px; padding: 1px 8px; }
+.fvd { color: var(--fg-3); font-size: 11.5px; }
+.fvbody {
+  position: relative; padding: 12px 14px 0; max-height: 260px; overflow: hidden; flex: 1;
+  -webkit-mask-image: linear-gradient(to bottom, #000 75%, transparent);
+          mask-image: linear-gradient(to bottom, #000 75%, transparent);
+}
+.fver.full .fvbody { max-height: none; -webkit-mask-image: none; mask-image: none; }
+.fvbody .prose { font-size: 14px; line-height: 1.65; }
+.fvreply { margin: 10px 0 12px; padding-left: 10px; border-left: 2px solid var(--line-2); color: var(--fg-2); font-size: 13px; line-height: 1.5; }
+.fvf { display: flex; align-items: center; gap: 4px; padding: 8px 8px 8px 14px; border-top: 1px solid var(--line); flex: none; }
+.fva { color: var(--fg-3); font-size: 12px; }
+.fvf .btn { height: 26px; padding: 0 8px; font-size: 12.5px; }
+
+.fdiff { margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.fdh { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 6px 0 14px; border-bottom: 1px solid var(--line); }
+.fdt { font-weight: 600; font-size: 12.5px; }
+.fleg { display: flex; gap: 6px; font-size: 11.5px; }
+.fdbody { padding: 12px 14px; white-space: pre-wrap; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.fdiff del, .fleg del { background: var(--del-bg); color: var(--del); text-decoration: line-through; text-decoration-thickness: 1px; border-radius: 3px; }
+.fdiff ins, .fleg ins { background: var(--ins-bg); color: var(--ins); text-decoration: none; border-radius: 3px; }
+.fleg del, .fleg ins { padding: 1px 6px; }
+.fdnote { padding: 0 14px 12px; color: var(--fg-3); font-size: 12px; }
+.fdh + .fdnote { padding-top: 12px; }
+
+/* The stepper in other views, and its way here. */
+.branch .bcmp { height: 22px; padding: 0 7px; margin-left: 4px; font-size: 11.5px; }
+.inum .i-branch { width: 11px; height: 11px; color: var(--accent); margin-top: 3px; }
 
 /* --- board (the columns template) --- */
 /* The board fills the reader, edge to edge and top to bottom: it is a surface,

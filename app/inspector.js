@@ -8,6 +8,7 @@
 
 import * as O from '../packages/organize/outline.js';
 import * as SEC from '../packages/organize/sections.js';
+import * as BR from '../packages/organize/branches.js';
 import { S, R, metaOf, convById, mainPath, folderPath, sectionsOf, revealFolder } from './core.js';
 import { $, $$, el, icon, iconBtn, fmtDate } from './lib/dom.js';
 import { newSection, renameSection, removeSection, turnText } from './reader.js';
@@ -38,8 +39,12 @@ export function renderInspector() {
     return;
   }
 
-  const { path } = mainPath(conv);
+  const { path, kids } = mainPath(conv);
   const turns = O.turns(path);
+  // Exchanges with another version somewhere in them get a mark, so forks can
+  // be found from any view, not just Branches.
+  const forked = new Set(BR.forks(path, kids).map((f) => path[f.at].id));
+  const hasFork = turns.map((t) => [t.user, ...t.replies].some((m) => m && forked.has(m.id)));
   const groups = SEC.group(turns, sectionsOf(conv.id));
   head.append(el('span', 'n', String(turns.length)));
 
@@ -79,7 +84,9 @@ export function renderInspector() {
       const txt = el('span', 'iq', q);
       const bar = el('span', 'ibar');
       bar.style.setProperty('--w', `${Math.round((weight(t) / max) * 100)}%`);
-      row.append(el('span', 'inum', String(n + 1)), txt);
+      const num = el('span', 'inum', String(n + 1));
+      if (hasFork[n]) { num.append(icon('branch')); num.title = 'Has other versions — see Branches'; }
+      row.append(num, txt);
       if (sec.startKey !== key && key) {
         row.append(iconBtn('bookmark', 'Start a section here', () => newSection(conv.id, key), 'hover'));
       }
