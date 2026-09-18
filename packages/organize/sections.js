@@ -28,7 +28,7 @@ export function group(turns, sections = []) {
   for (const t of turns) {
     const key = turnKey(t);
     const s = key ? byKey.get(key) : null;
-    if (s || !out.length) out.push({ title: s?.title ?? null, startKey: s ? key : null, turns: [] });
+    if (s || !out.length) out.push({ title: s?.title ?? null, startKey: s ? key : null, suggested: !!s?.suggested, turns: [] });
     out[out.length - 1].turns.push(t);
   }
   return out;

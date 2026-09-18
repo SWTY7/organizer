@@ -81,6 +81,20 @@ draggable and a "this is a guess" marker. Off until you turn it on.
 It will be wrong sometimes. That is acceptable *only* because correcting it is
 one click and the correction is permanent.
 
+> **Built** (`packages/organize/suggest.js`). Off until you press **Suggest
+> sections** — the wand in the outline panel, or on Outline's and the Board's
+> own bars. Suggestions are dashed and marked *Suggested* in every view, each
+> with Keep and Dismiss in plain sight, plus Keep all / Dismiss all. Nothing
+> is stored until you keep one; keeping makes it an ordinary section. The
+> dividers are not draggable — keep, dismiss, then bookmark by hand was
+> simpler to use and to explain than dragging a guess into place.
+>
+> Two rules the table above did not anticipate, both from trying it: a guess
+> that would leave a one-exchange section — first, last, or right beside a
+> section you made — is dropped, because it was nearly always wrong; and a
+> chat under four exchanges gets no suggestions, since it has no topics to
+> find.
+
 ## The templates
 
 Eight, each earning its place. Switching between them is a toolbar in the thread
@@ -128,6 +142,12 @@ conversation into something you can aim at. Ships with Outline.
 
 > Now the **Focus** template: one exchange in the reader, with Previous / Next
 > and `j` / `k`, and the inspector as its rail.
+>
+> Its first version looked too much like Transcript with less in it. It now
+> reads as a page: your question set as the title, the answer as a document
+> under it with its own headings as chips to jump by, and a pinned strip
+> with one tick per exchange showing where you are. The same page is what
+> the Board opens a card into.
 
 Outline on the left as a fixed rail, the selected turn in full on the right.
 Reads like documentation rather than like chat. `j` / `k` move. This is the one
@@ -168,8 +188,8 @@ exchange there opens the matching card and scrolls it into view on both axes,
 since in a 2D board "scroll it into view" means centring the right column too,
 not just the right row.
 
-**Cards can be moved** — dragged by the small strip at their top, or with
-"move to another section" from the same strip's ⋯, in case you would rather
+**Cards can be moved** — dragged, or with the move button each card shows on
+hover, in case you would rather
 file a reply under a different topic than the one it naturally fell into.
 This is deliberately narrower than free rearrangement, and the reason is the
 same one that motivated asking for it: a board you can freely reorder is a
@@ -184,7 +204,27 @@ in `applyMoves`'s own doc comment, because it is the kind of thing a later
 change could quietly get wrong. Columns is the one deliberately spatial view;
 moving a card only changes what that one view shows you.
 
-### 6. Branches — the honest 2D
+> **Since then — the Board.** The template is labelled *Board* now, and three
+> things changed after using it:
+>
+> - **It fills the reader.** It was capped at 72% of the window, which left a
+>   gap under it for no reason. The header stays; the columns take the rest,
+>   each scrolling on its own, and a move no longer resets where you were.
+> - **Cards open in a pop-up** instead of expanding in place. An expanded card
+>   in a 300px column was too narrow to read. Click a card and the exchange
+>   opens full size over the board: previous / next in true conversation
+>   order, `j` / `k` or arrows, Esc to close, and a move button. Because a
+>   card never holds selectable prose any more, the whole card is the drag
+>   handle, not a thin strip at its top.
+> - **Columns can be made on the board.** A chat with no sections had one
+>   column, so there was nowhere to drag a card to and dragging was switched
+>   off — with nothing on screen saying why. There is now always a **New
+>   column** slot at the end; click it, or drop a card on it. These columns
+>   (`meta.boardCols`) belong to the board alone, like moves, and removing one
+>   sends its cards back to their sections. Or press **Suggest columns** and
+>   let the heuristic below propose some.
+
+### 6. Branches — the honest 2D ✅
 
 For conversations with real forks. The main path runs down the page; each
 alternate branch peels off sideways at its fork point as a parallel track, with
@@ -196,6 +236,20 @@ that currently hides alternatives behind a control you have to notice.
 
 No other reader does this, and it is the payoff for capturing trees instead of
 lists.
+
+> **Built.** The path runs down the page as a line of exchanges; at each fork
+> the versions sit side by side, each saying how far it goes on ("then 3 more
+> messages"), with an edited question showing where it led. Under them, a
+> word-level diff (`packages/organize/diff.js`) against the version you are
+> reading, open by default since seeing what changed is why you came. When
+> two versions share almost nothing — a rewritten question usually does — it
+> says so instead of drawing one long deletion and one long insertion.
+> **Follow this version** switches the path, with Undo.
+>
+> The `‹ 2/3 ›` stepper is kept in the other views rather than removed — it is
+> still the quickest way to flip a reply in place — but it gained a
+> **Compare** button that brings you here, and the outline panel marks every
+> exchange that has another version, so forks can be found from anywhere.
 
 ### 7. Digest — what did I ask?
 
@@ -216,8 +270,8 @@ also where reconstructed artifacts live (see PLAN.md, Track B).
 | 2 | Spine ✅ | Outline | small |
 | 3 | Sections — manual ✅ | `meta.sections` | small |
 | 4 | Columns ✅ | sections | medium |
-| 5 | Branches 2D + diff | nothing (data is there) | medium |
-| 6 | Sections — suggested | the heuristic | medium |
+| 5 | Branches 2D + diff ✅ | nothing (data is there) | medium |
+| 6 | Sections — suggested ✅ | the heuristic | medium |
 | 7 | Gallery | assets work, for images | medium |
 | 8 | Digest | Outline | small |
 

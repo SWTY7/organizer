@@ -9,9 +9,9 @@
 import * as O from '../packages/organize/outline.js';
 import * as SEC from '../packages/organize/sections.js';
 import * as BR from '../packages/organize/branches.js';
-import { S, R, metaOf, convById, mainPath, folderPath, sectionsOf, revealFolder } from './core.js';
+import { S, R, metaOf, convById, mainPath, folderPath, shownSections, revealFolder } from './core.js';
 import { $, $$, el, icon, iconBtn, fmtDate } from './lib/dom.js';
-import { newSection, renameSection, removeSection, turnText } from './reader.js';
+import { newSection, renameSection, removeSection, turnText, suggestSections, keepOne, dismissOne } from './reader.js';
 import { provName } from './explorer.js';
 import { plural } from './actions.js';
 
@@ -45,8 +45,9 @@ export function renderInspector() {
   // be found from any view, not just Branches.
   const forked = new Set(BR.forks(path, kids).map((f) => path[f.at].id));
   const hasFork = turns.map((t) => [t.user, ...t.replies].some((m) => m && forked.has(m.id)));
-  const groups = SEC.group(turns, sectionsOf(conv.id));
-  head.append(el('span', 'n', String(turns.length)));
+  const groups = SEC.group(turns, shownSections(conv.id));
+  head.append(el('span', 'n', String(turns.length)), el('span', 'grow'),
+    iconBtn('wand', 'Suggest sections — a guess you can keep or dismiss', () => suggestSections(conv.id, turns)));
 
   const filter = el('input', 'in-filter');
   filter.type = 'search';
@@ -62,9 +63,15 @@ export function renderInspector() {
   for (const sec of groups) {
     let h = null;
     if (groups.length > 1) {
-      h = el('div', 'isec');
-      h.append(icon('bookmark'), el('span', 'st', sec.title || 'Beginning'));
-      if (sec.startKey) {
+      h = el('div', `isec${sec.suggested ? ' sug' : ''}`);
+      h.append(icon(sec.suggested ? 'wand' : 'bookmark'), el('span', 'st', sec.title || 'Beginning'));
+      if (sec.suggested) {
+        h.title = 'Suggested — a guess. Keep it or dismiss it.';
+        h.append(
+          iconBtn('check', 'Keep this section', () => keepOne(conv.id, sec.startKey)),
+          iconBtn('x', 'Dismiss this suggestion', () => dismissOne(conv.id, sec.startKey)),
+        );
+      } else if (sec.startKey) {
         h.append(
           iconBtn('pencil', 'Rename section', () => renameSection(conv.id, sec.startKey, sec.title), 'hover'),
           iconBtn('x', 'Remove this section break', () => removeSection(conv.id, sec.startKey), 'hover'),

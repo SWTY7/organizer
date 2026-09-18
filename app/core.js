@@ -12,6 +12,7 @@
 
 import * as T from '../packages/organize/folders.js';
 import * as SEC from '../packages/organize/sections.js';
+import * as SUG from '../packages/organize/suggest.js';
 import { uid } from './lib/dom.js';
 
 /** Redraw hooks, assigned by app.js. */
@@ -106,7 +107,8 @@ export const S = {
   sel: new Set(),
   lastClicked: null,      // anchor for shift-click ranges
   branchPick: new Map(),
-  compare: new Map(),     // Branches: fork parentId -> version shown against it, or "" for none
+  compare: new Map(),
+  suggested: new Map(),   // convId -> suggested section breaks, until kept or dismissed; never stored     // Branches: fork parentId -> version shown against it, or "" for none
 
   // Inline editing in the tree: which row is showing an input right now.
   editing: null,          // {kind: 'new-folder', parentId} | {kind: 'rename-folder', id} | {kind: 'rename-tag', tag}
@@ -537,6 +539,44 @@ export const clearSection = (convId, key) =>
     sections: SEC.clearBreak(m.sections || [], key),
     cardMoves: purgeMoves(m.cardMoves, new Set([key])),
   }));
+/* A suggestion is a guess on screen, not a change: nothing about it is
+   stored until you keep it. Keeping one makes it an ordinary section. */
+export const suggestionsOf = (convId) => S.suggested.get(convId) || [];
+/** What the views show: your sections, plus any suggestions not yet answered. */
+export function shownSections(convId) {
+  const mine = sectionsOf(convId);
+  const taken = new Set(mine.map((x) => x.startStableKey));
+  return [...mine, ...suggestionsOf(convId).filter((x) => !taken.has(x.startStableKey))];
+}
+export function runSuggest(convId, turns) {
+  const found = SUG.suggest(turns, sectionsOf(convId));
+  if (found.length) S.suggested.set(convId, found); else S.suggested.delete(convId);
+  return found.length;
+}
+export async function dismissSuggestion(convId, key) {
+  const rest = suggestionsOf(convId).filter((x) => x.startStableKey !== key);
+  if (rest.length) S.suggested.set(convId, rest); else S.suggested.delete(convId);
+  // A card dragged onto a suggested column goes back when the column does.
+  if (Object.values(cardMovesOf(convId)).includes(key)) {
+    await setMeta([convId], (m) => ({ cardMoves: purgeMoves(m.cardMoves, new Set([key])) }));
+  }
+}
+/** Keep some or all suggestions. Returns the keys kept, for Undo. */
+export async function keepSuggestions(convId, keys = null) {
+  const all = suggestionsOf(convId);
+  const keep = keys ? all.filter((x) => keys.includes(x.startStableKey)) : all;
+  await setMeta([convId], (m) => ({
+    sections: keep.reduce((acc, x) => SEC.setBreak(acc, x.startStableKey, x.title), m.sections || []),
+  }));
+  const rest = all.filter((x) => !keep.includes(x));
+  if (rest.length) S.suggested.set(convId, rest); else S.suggested.delete(convId);
+  return keep;
+}
+export async function unkeepSuggestions(convId, kept) {
+  await setMeta([convId], (m) => ({ sections: (m.sections || []).filter((x) => !kept.some((k) => k.startStableKey === x.startStableKey)) }));
+  S.suggested.set(convId, [...suggestionsOf(convId), ...kept]);
+}
+
 export const dropSections = (convId, keys) =>
   setMeta([convId], (m) => ({
     sections: (m.sections || []).filter((s) => !keys.has(s.startStableKey)),

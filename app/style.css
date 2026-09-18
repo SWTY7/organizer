@@ -784,3 +784,26 @@ input.inline {
   .rd-head h1 { font-size: 21px; }
   .rd-top { padding: 0 6px; }
 }
+
+/* --------------------------------------------------------- suggestions */
+/* A guess looks like a guess: dashed where a real section is solid, marked
+   "Suggested", and with its Keep and Dismiss in plain sight. */
+.sugbar { border: 1px dashed var(--line-2); background: none; }
+.sugbar > .i { color: var(--accent); }
+.sugbar .btn { height: 28px; }
+.sec.sug { border-bottom-style: dashed; }
+.sec.sug .st { color: var(--fg-2); }
+.sgtag {
+  font-size: 11px; font-weight: 500; color: var(--accent); border: 1px dashed var(--accent);
+  border-radius: 999px; padding: 0 7px; line-height: 18px;
+}
+.sec.sug .btn { height: 26px; padding: 0 9px; }
+.btn.sgk { color: var(--accent); }
+.colsec.sug { border-style: dashed; border-color: var(--accent); }
+.colhead.sug .st { color: var(--fg-2); }
+.colhead.sug .st::before { content: 'Suggested · '; color: var(--accent); font-weight: 500; }
+.colhead .ibtn.sgk { color: var(--accent); }
+.isec.sug .st { color: var(--fg-2); font-style: italic; }
+.isec.sug .i-wand { color: var(--accent); }
+.isec.sug .ibtn.sgk { color: var(--accent); }
+.in-head .ibtn { width: 24px; height: 24px; margin-right: -6px; }

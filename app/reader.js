@@ -21,6 +21,7 @@ import {
   S, R, PREFS, metaOf, convById, mainPath, folderPath, sectionsOf, setSection, clearSection,
   dropSections, removeTag, openConv, blockText, revealFolder, cardMovesOf, moveCard, resetCard,
   boardColsOf, addBoardCol, renameBoardCol, dropBoardCol,
+  shownSections, suggestionsOf, runSuggest, dismissSuggestion, keepSuggestions, unkeepSuggestions,
 } from './core.js';
 import {
   $, $$, el, icon, iconBtn, btn, menu, at, askText, confirmDialog, fmtDate, toast, picker, floatOpen, closeFloat,
@@ -185,10 +186,65 @@ export async function removeSection(convId, key) {
   R.inspector();
 }
 
+/* ------------------------------------------------------------ suggestions */
+
+export function suggestSections(convId, turns) {
+  const n = runSuggest(convId, turns);
+  R.reader();
+  R.inspector();
+  toast(n
+    ? `${plural(n, 'suggested section')} — keep the ones that fit`
+    : 'No clear change of topic found. Start a section yourself from the bookmark on any message.');
+}
+export async function keepOne(convId, key) {
+  await keepSuggestions(convId, [key]);
+  R.reader();
+  R.inspector();
+}
+export async function dismissOne(convId, key) {
+  await dismissSuggestion(convId, key);
+  R.reader();
+  R.inspector();
+}
+
+/** Keep and Dismiss, as buttons you can see — a guess must be easy to answer. */
+function suggestionButtons(convId, key, small = false) {
+  return small
+    ? [iconBtn('check', 'Keep this section', () => keepOne(convId, key), 'sgk'),
+      iconBtn('x', 'Dismiss this suggestion', () => dismissOne(convId, key))]
+    : [btn('check', 'Keep', () => keepOne(convId, key), 'sgk'),
+      btn(null, 'Dismiss', () => dismissOne(convId, key), 'ghost')];
+}
+
+function suggestionBar(convId) {
+  const n = suggestionsOf(convId).length;
+  if (!n) return null;
+  const bar = el('div', 'note sugbar');
+  bar.append(icon('wand'), el('span', null,
+    `${plural(n, 'suggested section')}, guessed from pauses and changes of subject. Keep the ones that fit.`),
+  el('span', 'grow'),
+  btn('check', 'Keep all', async () => {
+    const kept = await keepSuggestions(convId);
+    R.reader(); R.inspector();
+    toast(`Kept ${plural(kept.length, 'section')}`, {
+      label: 'Undo', run: async () => { await unkeepSuggestions(convId, kept); R.reader(); R.inspector(); },
+    });
+  }, 'sgk'),
+  btn(null, 'Dismiss all', async () => {
+    for (const x of suggestionsOf(convId)) await dismissSuggestion(convId, x.startStableKey);
+    R.reader(); R.inspector();
+  }, 'ghost'));
+  return bar;
+}
+
 function sectionHeading(convId, sec) {
-  const h = el('div', 'sec');
+  const h = el('div', `sec${sec.suggested ? ' sug' : ''}`);
   h.append(el('span', 'st', sec.title || 'Beginning'), el('span', 'sn', plural(sec.turns.length, 'exchange')));
-  if (sec.startKey) {
+  if (sec.suggested) {
+    const tag = el('span', 'sgtag', 'Suggested');
+    tag.title = 'A guess. Keep it to make it a section, or dismiss it.';
+    h.append(tag, el('span', 'grow'), ...suggestionButtons(convId, sec.startKey));
+  } else if (sec.startKey) {
     h.append(el('span', 'grow'),
       iconBtn('pencil', 'Rename section', () => renameSection(convId, sec.startKey, sec.title), 'hover'),
       iconBtn('x', 'Remove this section break', () => removeSection(convId, sec.startKey), 'hover'));
@@ -226,7 +282,7 @@ function outline(col, groups, kids, ctx) {
     S.openTurns = open ? new Set(Array.from({ length: total }, (_, k) => k)) : new Set();
     R.reader();
   }, 'ghost');
-  bar.append(el('span', 'grow'), all);
+  bar.append(el('span', 'grow'), btn('wand', 'Suggest sections', () => suggestSections(ctx.convId, ctx.turns), 'ghost'), all);
   col.append(bar);
 
   let i = 0;
@@ -387,7 +443,7 @@ export function openSheet(n) {
     i = Math.max(0, Math.min(i, turns.length - 1));
     const t = turns[i];
     const onBoard = S.template === 'columns';
-    const groups = onBoard ? boardOf(conv.id, turns) : SEC.group(turns, sectionsOf(conv.id));
+    const groups = onBoard ? boardOf(conv.id, turns) : SEC.group(turns, shownSections(conv.id));
     const g = groups.find((x) => x.turns.includes(t));
     const where = groups.length > 1 && g ? g.title || 'Beginning' : null;
     const key = SEC.turnKey(t);
@@ -456,12 +512,12 @@ const NEW_COL = '__new';
 
 /** The board's columns: sections, then any made on the board, with moves applied. */
 const boardOf = (convId, turns) =>
-  SEC.applyMoves(turns, sectionsOf(convId), cardMovesOf(convId), boardColsOf(convId));
+  SEC.applyMoves(turns, shownSections(convId), cardMovesOf(convId), boardColsOf(convId));
 
 /** File a card under a column. Back to its own section clears the move
     rather than recording one that changes nothing. */
 async function fileCard(convId, turns, key, target) {
-  const natural = SEC.group(turns, sectionsOf(convId))
+  const natural = SEC.group(turns, shownSections(convId))
     .find((g) => g.turns.some((t) => SEC.turnKey(t) === key));
   const naturalKey = natural ? natural.startKey ?? SEC.BEGIN : SEC.BEGIN;
   const before = cardMovesOf(convId)[key];
@@ -512,7 +568,10 @@ function cardPicker(convId, turns, key, anchor, after) {
 function columnHead(convId, g) {
   const head = el('div', 'colhead');
   head.append(el('span', 'st', g.title || 'Beginning'), el('span', 'sn', String(g.turns.length)));
-  if (g.extra) {
+  if (g.suggested) {
+    head.classList.add('sug');
+    head.append(...suggestionButtons(convId, g.startKey, true));
+  } else if (g.extra) {
     head.append(
       iconBtn('pencil', 'Rename column', async () => {
         const t = await askText({ title: 'Rename column', value: g.title, ok: 'Rename' });
@@ -573,6 +632,7 @@ function columns(col, groups, kids, ctx) {
   bar.append(el('span', null, `${plural(board.length, 'column')} · ${plural(total, 'exchange')}`));
   bar.append(el('span', 'bhint', '· click a card to read it, drag it to file it elsewhere'));
   bar.append(el('span', 'grow'));
+  bar.append(btn('wand', 'Suggest columns', () => suggestSections(convId, ctx.turns), 'ghost'));
   bar.append(btn('plus', 'New column', () => newColumn(convId), 'ghost'));
   bar.append(iconBtn(S.colsTransposed ? 'columns' : 'swap',
     S.colsTransposed ? 'Lay columns out side by side' : 'Stack columns as rows',
@@ -590,7 +650,7 @@ function columns(col, groups, kids, ctx) {
 
   const wrap = el('div', `cols${S.colsTransposed ? ' transposed' : ''}`);
   for (const g of board) {
-    const section = el('div', `colsec${g.extra ? ' extra' : ''}`);
+    const section = el('div', `colsec${g.extra ? ' extra' : ''}${g.suggested ? ' sug' : ''}`);
     section.append(columnHead(convId, g));
     const list = el('div', 'collist');
     dropTarget(section, (key) => {
@@ -1024,7 +1084,7 @@ export function renderReader() {
   const turns = O.turns(path);
   S.turnCount = turns.length;
   const sections = sectionsOf(conv.id);
-  const groups = SEC.group(turns, sections);
+  const groups = SEC.group(turns, shownSections(conv.id));
   const lost = SEC.orphaned(turns, sections);
   if (lost.length) {
     const n = el('div', 'note');
@@ -1043,6 +1103,9 @@ export function renderReader() {
     }, 'ghost'));
     col.append(n);
   }
+
+  const sug = suggestionBar(conv.id);
+  if (sug) col.append(sug);
 
   const ctx = { convId: conv.id, assistant: provName(conv.provider), turns, path };
   ({ transcript, outline, focus, branches, columns }[S.template] || transcript)(col, groups, kids, ctx);
