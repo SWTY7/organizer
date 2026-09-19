@@ -121,6 +121,8 @@ export const S = {
   showInspector: true,
   focusAt: 0,             // which exchange the Focus template shows
   outlineFilter: '',
+  digestFilter: '',
+  galleryKind: '',        // Gallery: '' for everything, or one kind
   openTurns: new Set(),   // exchanges expanded in Outline or Columns — survives a re-render
   colsTransposed: false,  // Columns: sections across (default) or sections stacked
   turnEls: [],            // first element of each exchange, for the inspector
@@ -139,6 +141,7 @@ export function openConv(id) {
   S.focusAt = 0;
   S.activeTurn = 0;
   S.outlineFilter = '';
+  S.digestFilter = '';
   S.openTurns = new Set();
   const m = metaOf(id);
   if (m.folderId) revealFolder(m.folderId);

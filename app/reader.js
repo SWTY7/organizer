@@ -5,6 +5,8 @@
      Transcript  every message, top to bottom, as a chat
      Outline     one line per exchange, open the ones you want
      Focus       one exchange at a time, set as a page
+     Digest      only your questions, answers in the pop-up
+     Gallery     code, tables, files, tool calls and links, as a grid
      Branches    the path down the page, other versions beside it, diffed
      Board       (`columns`) exchanges as cards in columns you arrange;
                  a card opens in a pop-up, the "sheet"
@@ -17,6 +19,7 @@ import * as O from '../packages/organize/outline.js';
 import * as SEC from '../packages/organize/sections.js';
 import * as BR from '../packages/organize/branches.js';
 import { diffWords } from '../packages/organize/diff.js';
+import * as GAL from '../packages/organize/gallery.js';
 import {
   S, R, PREFS, metaOf, convById, mainPath, folderPath, sectionsOf, setSection, clearSection,
   dropSections, removeTag, openConv, blockText, revealFolder, cardMovesOf, moveCard, resetCard,
@@ -33,9 +36,11 @@ import { provName } from './explorer.js';
 export const TEMPLATES = {
   transcript: { label: 'Transcript', icon: 'rows', hint: 'Every message, top to bottom' },
   outline: { label: 'Outline', icon: 'outline', hint: 'One line per exchange — open the ones you want' },
+  digest: { label: 'Digest', icon: 'msg', hint: 'Only your questions — find the one you asked' },
   focus: { label: 'Focus', icon: 'focus', hint: 'One exchange at a time, as a page · j / k to move' },
   branches: { label: 'Branches', icon: 'branch', hint: 'Every regenerate and edit, side by side, with what changed' },
   columns: { label: 'Board', icon: 'columns', hint: 'Exchanges as cards in columns — arrange them, click one to read it' },
+  gallery: { label: 'Gallery', icon: 'grid', hint: 'Every code block, table, file, tool call and link, as a grid' },
 };
 
 /* ---------------------------------------------------------------- blocks */
@@ -851,6 +856,186 @@ function branches(col, groups, kids, ctx) {
   col.append(spine);
 }
 
+/* ---------------------------------------------------------------- digest */
+
+/** A question as plain text, with anything attached named rather than lost. */
+function questionText(m) {
+  if (!m) return '';
+  const parts = [];
+  for (const b of m.content || []) {
+    if (b.type === 'text' && b.text) parts.push(b.text.trim());
+    else if (b.type === 'code') parts.push(`[code${b.lang ? ` · ${b.lang}` : ''}]`);
+    else if (b.type === 'file' || b.type === 'image') parts.push(`[${b.filename || b.type}]`);
+  }
+  return parts.join('\n');
+}
+
+/**
+ * Only your questions, in full, in order — for finding the thing you know you
+ * asked somewhere in a long session. Answers open in the pop-up, so the list
+ * stays a list you can scan.
+ */
+function digest(col, groups, kids, ctx) {
+  const bar = el('div', 'obar');
+  bar.append(el('span', null, plural(ctx.turns.filter((t) => t.user).length, 'question')));
+  const find = el('input', 'dfind');
+  find.type = 'search';
+  find.placeholder = 'Find a question';
+  find.value = S.digestFilter;
+  bar.append(el('span', 'grow'), find);
+  bar.append(btn('copy', 'Copy questions', async () => {
+    const text = ctx.turns.map((t, i) => (t.user ? `${i + 1}. ${questionText(t.user)}` : null)).filter(Boolean).join('\n\n');
+    try { await navigator.clipboard.writeText(text); toast(`Copied ${plural(ctx.turns.filter((t) => t.user).length, 'question')}`); }
+    catch { toast('The browser did not allow copying here'); }
+  }, 'ghost'));
+  col.append(bar);
+
+  const words = (t) => O.stats(t.replies).words;
+  const max = Math.max(1, ...ctx.turns.map(words));
+  const rows = [];
+  const heads = [];
+  let i = 0;
+  for (const sec of groups) {
+    let h = null;
+    if (groups.length > 1) { h = el('div', `dsec${sec.suggested ? ' sug' : ''}`, sec.title || 'Beginning'); col.append(h); }
+    const from = rows.length;
+    for (const t of sec.turns) {
+      const n = i++;
+      const q = questionText(t.user) || '(continues from the previous reply)';
+      const row = el('button', `dq${t.user ? '' : ' none'}`);
+      row.type = 'button';
+      row.dataset.turn = n;
+      row.title = 'Read the answer';
+      const w = words(t);
+      const len = el('span', 'dlen');
+      len.style.setProperty('--w', `${Math.round(Math.sqrt(w / max) * 100)}%`);
+      len.title = `${w.toLocaleString()} words in the answer`;
+      row.append(el('span', 'onum', String(n + 1)), el('span', 'dqt', q), len);
+      row.onclick = () => openSheet(n);
+      row._hay = q.toLowerCase();
+      S.turnEls[n] = row;
+      rows.push(row);
+      col.append(row);
+    }
+    if (h) heads.push({ h, from, to: rows.length });
+  }
+  const none = el('div', 'dnone', 'No question matches.');
+  col.append(none);
+
+  // Hide rather than re-render, so typing keeps its place.
+  const apply = () => {
+    const q = S.digestFilter.trim().toLowerCase();
+    for (const r of rows) r.hidden = Boolean(q) && !r._hay.includes(q);
+    for (const { h, from, to } of heads) h.hidden = rows.slice(from, to).every((r) => r.hidden);
+    none.hidden = !q || rows.some((r) => !r.hidden);
+  };
+  find.oninput = () => { S.digestFilter = find.value; apply(); };
+  apply();
+}
+
+/* --------------------------------------------------------------- gallery */
+
+const KIND_ICON = { code: 'code', table: 'table', image: 'image', file: 'file', tool: 'tool', link: 'link' };
+
+function galleryCard(it, t, n) {
+  const card = el('div', `gitem k-${it.kind}${it.isError ? ' err' : ''}`);
+  const head = el('div', 'gh');
+  let label;
+  switch (it.kind) {
+    case 'code': label = it.lang || 'code'; break;
+    case 'table': label = `${plural(it.columns.length, 'column')} × ${plural(it.rows, 'row')}`; break;
+    case 'link': try { label = new URL(it.url).hostname.replace(/^www\./, ''); } catch { label = 'link'; } break;
+    default: label = it.title;
+  }
+  head.append(icon(KIND_ICON[it.kind]), el('span', 'gl', label), el('span', 'grow'));
+  const from = el('button', 'gfrom', `#${n + 1}`);
+  from.type = 'button';
+  from.title = `From exchange ${n + 1}${t.user ? ` — ${O.clip(O.plain(O.gist([t.user], 200)), 80)}` : ''}. Open it.`;
+  from.onclick = () => openSheet(n);
+  head.append(from);
+  card.append(head);
+
+  const body = el('div', 'gb');
+  let long = false;
+  if (it.kind === 'code' || it.kind === 'tool' || (it.kind === 'file' && it.text)) {
+    const pre = el('pre');
+    pre.append(el('code', null, it.text || ''));
+    body.append(pre);
+    long = (it.text || '').split('\n').length > 12;
+  } else if (it.kind === 'table') {
+    const d = el('div', 'prose');
+    d.innerHTML = md(it.text);
+    body.append(d);
+    long = it.rows > 6;
+  } else if (it.kind === 'link') {
+    const a = el('a', 'glink', it.title || it.url);
+    a.href = it.url;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    body.append(a);
+    if (it.title) body.append(el('div', 'gurl', it.url));
+  } else {
+    body.append(el('div', 'gref', `${it.kind === 'image' && it.width ? `${it.width}×${it.height} · ` : ''}Not downloaded — captured as a reference`));
+  }
+  card.append(body);
+
+  if (it.text || long) {
+    const foot = el('div', 'gf');
+    foot.append(el('span', 'grow'));
+    if (long) {
+      const more = btn(null, 'Show all', () => {
+        more.lastChild.textContent = card.classList.toggle('full') ? 'Show less' : 'Show all';
+      }, 'ghost');
+      foot.append(more);
+    }
+    if (it.text) {
+      const copy = iconBtn('copy', 'Copy', async () => {
+        try { await navigator.clipboard.writeText(it.text); copy.classList.add('done'); setTimeout(() => copy.classList.remove('done'), 1200); }
+        catch { /* refused */ }
+      });
+      foot.append(copy);
+    }
+    card.append(foot);
+  }
+  return card;
+}
+
+/**
+ * Everything that is not prose — code, tables, images, files, tool calls,
+ * links — as a grid, filterable by kind, each with its way back to the
+ * exchange it came from. The answer to "where was that snippet".
+ */
+function gallery(col, groups, kids, ctx) {
+  const all = GAL.items(ctx.turns);
+  const c = GAL.counts(all);
+  if (S.galleryKind && !c[S.galleryKind]) S.galleryKind = '';
+
+  const bar = el('div', 'obar gbar');
+  const chip = (kind, label, n) => {
+    const b = el('button', `gchip${S.galleryKind === kind ? ' on' : ''}`);
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(S.galleryKind === kind));
+    if (kind) b.append(icon(KIND_ICON[kind]));
+    b.append(el('span', null, label), el('span', 'gn', String(n)));
+    b.onclick = () => { S.galleryKind = kind; R.reader(); };
+    return b;
+  };
+  bar.append(chip('', 'All', all.length));
+  for (const [k, label] of Object.entries(GAL.KINDS)) if (c[k]) bar.append(chip(k, label, c[k]));
+  col.append(bar);
+
+  if (!all.length) {
+    col.append(el('div', 'note', 'Nothing but prose here — no code, tables, images, files, tool calls or links.'));
+    return;
+  }
+  const grid = el('div', 'gal');
+  for (const it of all) {
+    if (S.galleryKind && it.kind !== S.galleryKind) continue;
+    grid.append(galleryCard(it, ctx.turns[it.turn], it.turn));
+  }
+  col.append(grid);
+}
+
 /** The one line that stands in for a whole exchange. */
 export function turnSummary(t, width = 160) {
   const mid = el('span', 'osum');
@@ -878,8 +1063,8 @@ export function goTurn(i) {
     $('.rd-scroll')?.scrollTo({ top: 0 });
     return;
   }
-  if (S.template === 'columns') {
-    // On the board, going to an exchange means reading it.
+  if (S.template === 'columns' || S.template === 'digest' || S.template === 'gallery') {
+    // Where exchanges are summaries, going to one means reading it.
     S.turnEls[n]?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     openSheet(n);
     return;
@@ -900,7 +1085,7 @@ export function goTurn(i) {
 function trackActive() {
   // Neither template has one reading order to track a position along:
   // Focus shows a single exchange, and Columns is a 2D board.
-  if (S.template === 'focus' || S.template === 'columns') return;
+  if (S.template === 'focus' || S.template === 'columns' || S.template === 'gallery' || S.template === 'digest') return;
   const sc = $('.rd-scroll');
   if (!sc) return;
   const top = sc.getBoundingClientRect().top + 60;
@@ -1072,7 +1257,7 @@ export function renderReader() {
   S.turnEls = [];
   if (!conv) { scroll.append(emptyReader()); return; }
 
-  const col = el('article', S.template === 'columns' ? 'rd-col wide' : S.template === 'branches' ? 'rd-col mid' : 'rd-col');
+  const col = el('article', S.template === 'columns' ? 'rd-col wide' : S.template === 'branches' || S.template === 'gallery' ? 'rd-col mid' : 'rd-col');
   scroll.append(col);
   const { path, kids, rootCount } = mainPath(conv);
   col.append(header(conv, path));
@@ -1108,7 +1293,7 @@ export function renderReader() {
   if (sug) col.append(sug);
 
   const ctx = { convId: conv.id, assistant: provName(conv.provider), turns, path };
-  ({ transcript, outline, focus, branches, columns }[S.template] || transcript)(col, groups, kids, ctx);
+  ({ transcript, outline, digest, focus, branches, columns, gallery }[S.template] || transcript)(col, groups, kids, ctx);
 
   scroll.addEventListener('scroll', trackActive, { passive: true });
   scroll.scrollTop = keep;

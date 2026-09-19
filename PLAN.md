@@ -338,7 +338,7 @@ raised, and it lands early now rather than last.
 **Phase 3 — organizer. ✅ Done.** Folders, tags, saved searches, archive, bulk actions,
 drag and drop.
 
-**Phase 4 — reading.** Alternative ways to read one conversation: outline, map
+**Phase 4 — reading. ✅ Done 2026-09-19.** Alternative ways to read one conversation: outline, map
 ribbon, spine, columns, 2D branches, gallery, digest. Nested folders land here
 too, because everything else starts displaying folder paths. Design:
 [`READING.md`](READING.md).

@@ -807,3 +807,67 @@ input.inline {
 .isec.sug .i-wand { color: var(--accent); }
 .isec.sug .ibtn.sgk { color: var(--accent); }
 .in-head .ibtn { width: 24px; height: 24px; margin-right: -6px; }
+
+/* --- digest template --- */
+.dfind {
+  width: 220px; height: 28px; padding: 0 9px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--bg); outline: 0;
+}
+.dfind:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--sel); }
+.dsec { margin: 22px 0 4px; padding: 0 6px 6px; border-bottom: 1px solid var(--line); font-weight: 600; font-size: 13px; color: var(--fg-2); }
+.dsec.sug { border-bottom-style: dashed; font-style: italic; }
+.dq {
+  display: grid; grid-template-columns: 26px 1fr 64px; column-gap: 10px; align-items: start; width: 100%;
+  padding: 11px 6px; border: 0; border-bottom: 1px solid var(--line); background: none; text-align: left;
+  border-radius: 0;
+}
+.dq:hover { background: var(--hover); }
+.dq.none .dqt { color: var(--fg-3); font-style: italic; }
+.dqt {
+  font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+}
+/* How long the answer is, so a one-liner and an essay do not look alike. */
+.dlen { height: 3px; margin-top: 9px; border-radius: 2px; background: var(--line); position: relative; }
+.dlen::after { content: ''; position: absolute; inset: 0 auto 0 0; width: var(--w); border-radius: 2px; background: var(--fg-3); }
+.dnone { padding: 20px 6px; color: var(--fg-3); }
+
+/* --- gallery template --- */
+.gbar { flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.gchip {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--fg-2); font-size: 12.5px;
+}
+.gchip .i { width: 14px; height: 14px; }
+.gchip .gn { color: var(--fg-3); font-variant-numeric: tabular-nums; }
+.gchip:hover { background: var(--hover); color: var(--fg); }
+.gchip.on { background: var(--sel); border-color: transparent; color: var(--fg); }
+.gal { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.gitem { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); overflow: hidden; }
+.gitem.err { border-color: var(--danger); }
+.gh { display: flex; align-items: center; gap: 7px; height: 36px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--line); color: var(--fg-2); }
+.gh .i { width: 15px; height: 15px; color: var(--fg-3); }
+.gl { font-size: 12.5px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.k-code .gl, .k-tool .gl { font-family: var(--mono); font-size: 12px; }
+.gfrom {
+  height: 22px; padding: 0 7px; border: 0; border-radius: 999px; background: var(--bg-sunk);
+  color: var(--fg-2); font-size: 11.5px; font-variant-numeric: tabular-nums;
+}
+.gfrom:hover { background: var(--sel); color: var(--fg); }
+.gb {
+  max-height: 240px; overflow: hidden; position: relative;
+  -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent);
+          mask-image: linear-gradient(to bottom, #000 80%, transparent);
+}
+.gitem.full .gb { max-height: none; -webkit-mask-image: none; mask-image: none; }
+.k-link .gb, .k-image .gb, .k-file .gb { -webkit-mask-image: none; mask-image: none; }
+.gb pre { margin: 0; padding: 10px 12px; font: 12px/1.55 var(--mono); background: var(--bg-sunk); white-space: pre; overflow-x: auto; }
+.gb .prose { padding: 8px 12px; font-size: 13px; }
+.gb .prose table { margin: 0; }
+.glink { display: block; padding: 10px 12px 2px; color: var(--accent); text-decoration: none; font-weight: 500; overflow-wrap: anywhere; }
+.glink:hover { text-decoration: underline; }
+.gurl { padding: 0 12px 10px; color: var(--fg-3); font-size: 12px; overflow-wrap: anywhere; }
+.k-link .glink:last-child { padding-bottom: 10px; }
+.gref { padding: 12px; color: var(--fg-3); font-size: 12.5px; }
+.gf { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-top: 1px solid var(--line); }
+.gf .btn { height: 26px; padding: 0 8px; font-size: 12.5px; }

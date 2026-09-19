@@ -251,16 +251,35 @@ lists.
 > **Compare** button that brings you here, and the outline panel marks every
 > exchange that has another version, so forks can be found from anywhere.
 
-### 7. Digest — what did I ask?
+### 7. Digest — what did I ask? ✅
 
 Only your questions, in order, each expandable to its answer. For finding the
 thing you know you asked about somewhere in a long session.
 
-### 8. Gallery — everything that isn't prose
+> **Built.** Each question in full rather than clipped — that is what makes it
+> different from Outline, which trades the question's length for a preview of
+> the answer. A thin bar says how long each answer is. Answers open in the
+> same pop-up as the Board's cards rather than expanding in place, so the
+> list stays scannable. A **Find a question** box filters the list (questions
+> only; the outline panel's filter searches everything), and **Copy
+> questions** puts the numbered list on your clipboard.
+
+### 8. Gallery — everything that isn't prose ✅
 
 Every code block, image, table, artifact and tool output in the conversation,
 pulled out into a grid, each with a jump back to where it came from. This is
 also where reconstructed artifacts live (see PLAN.md, Track B).
+
+> **Built** (`packages/organize/gallery.js`), for what the data holds today:
+> code, tables, files, tool calls and results, links, and image references.
+> Code and tables are found inside markdown too, not only as blocks of their
+> own — ChatGPT puts everything in one text block, and would otherwise show
+> an empty gallery. Chips filter by kind, each card's `#n` opens the exchange
+> it came from, and long items expand in place.
+>
+> Two parts wait on Phase 5: images show as references until the bytes are
+> captured, and artifacts appear as the raw tool calls that build them until
+> they are reconstructed into the finished document.
 
 ## Order of work
 
@@ -272,7 +291,7 @@ also where reconstructed artifacts live (see PLAN.md, Track B).
 | 4 | Columns ✅ | sections | medium |
 | 5 | Branches 2D + diff ✅ | nothing (data is there) | medium |
 | 6 | Sections — suggested ✅ | the heuristic | medium |
-| 7 | Gallery | assets work, for images | medium |
-| 8 | Digest | Outline | small |
+| 7 | Gallery ✅ (images and artifacts: Phase 5) | assets work, for images | medium |
+| 8 | Digest ✅ | Outline | small |
 
 Rows 1–3 are most of the benefit and very little of the risk.
