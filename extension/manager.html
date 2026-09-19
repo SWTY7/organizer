@@ -155,14 +155,17 @@
     <b>How this works.</b> The extension reads your conversations through the
     same endpoints the Claude and ChatGPT web apps use, with the session you are
     already signed in to. It requests about three conversations per second.
-    Exported files are <code>.chatpack.json</code> — drop them into the reader
-    at <code>localhost:4173</code>.
+    Exported files are <code>.chatpack.json</code>, or <code>.chatpack.zip</code>
+    when images and files are included — drop either into the reader at
+    <code>localhost:4173</code>.
   </div>
 </div>
 
 <div class="bar" id="bar" hidden>
   <span class="count" id="selCount"></span>
   <progress id="prog" hidden></progress>
+  <label class="check" title="Images and uploaded files are fetched now, while the site still has them — its links expire and old uploads are deleted. Adds roughly 30 KB per image.">
+    <input type="checkbox" id="keepAssets" checked> Include images and files</label>
   <button class="btn primary" id="export">Export selected</button>
 </div>
 

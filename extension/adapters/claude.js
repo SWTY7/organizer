@@ -160,26 +160,16 @@ export const claude = {
   },
 
   /**
-   * Uploaded documents, whose text is already here.
+   * The bytes behind an image block, for a capture that keeps attachments.
    *
-   * `attachments[]` is a different list from `files[]`, and it carries
-   * `extracted_content` — the plain text Claude read out of the upload. No
-   * second fetch, no bytes to store, and it makes every PDF and source file
-   * you have ever attached searchable. This was being discarded.
-   *
-   * `declaredBytes` is kept alongside the character count so a later check can
-   * tell a complete extraction from a truncated one.
+   * Images only. `preview_url` is the full-resolution image (Phase 0b), on the
+   * session cookies alone. A document's `files[]` entry has only a thumbnail
+   * of its first page, which is not the document — and its text already
+   * arrived through `attachments[]` — so documents are not fetched.
    */
-  attachments(msg) {
-    return (msg.attachments || []).map((a) => ({
-      type: 'file',
-      filename: a.file_name,
-      mime: a.file_type || null,
-      ...(typeof a.extracted_content === 'string' && a.extracted_content
-        ? { text: a.extracted_content }
-        : {}),
-      meta: { attachmentId: a.id, declaredBytes: a.file_size ?? null },
-    }));
+  async fetchAsset(b) {
+    if (b.type !== 'image' || !b.srcRef) return null;
+    return this.http.bytes(b.srcRef);
   },
 
   async convert(d, listItem) {

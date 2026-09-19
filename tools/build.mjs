@@ -21,6 +21,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const MODULES = [
   'packages/adapters/shared.js',
   'packages/adapters/zip.js',
+  'packages/adapters/capture.js',
   'packages/adapters/claude.js',
   'packages/adapters/chatgpt.js',
   'packages/adapters/index.js',

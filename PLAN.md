@@ -347,9 +347,26 @@ too, because everything else starts displaying folder paths. Design:
 files are retrievable and whether Claude already hands us extracted document
 text. Runs before the format is bumped, not after.
 
-**Phase 5 — assets.** `.chatpack.zip`, capture-time attachment fetch with size
-caps, blobs in IndexedDB, sandboxed SVG/HTML rendering, artifact
-reconstruction. §12.3.
+**Phase 5 — assets. Built 2026-09-19; capture awaits a live run.**
+`.chatpack.zip`, capture-time attachment fetch with size caps, blobs in
+IndexedDB, sandboxed SVG/HTML rendering, artifact reconstruction. §12.3.
+
+What exists: artifacts rebuilt from their tool calls
+(`packages/organize/artifacts.js`); SVG drawn as an image and HTML in a
+sealed frame behind a click (`app/lib/preview.js`); a dependency-free zip
+reader/writer (`packages/adapters/zip.js`); a `blobs` store keyed by
+SHA-256, filled from `.chatpack.zip` imports with every blob checked against
+its name; and in the extension, **Include images and files** (on by default),
+which fetches each reference once through the adapter's `fetchAsset`, caps a
+file at 50 MB and an export at 1 GB, and writes a `.chatpack.zip`
+(`packages/adapters/capture.js`).
+
+Not yet proven: the fetches themselves, against real accounts. Claude images
+use `preview_url` and ChatGPT uploads `/files/{id}/download`, both measured
+in Phase 0b; ChatGPT generated images are still expected to be refused
+(FINDINGS 3b) and will be reported as "could not be downloaded". The console
+export script still writes JSON only. Running React artifacts, and Mermaid,
+remain deferred as planned.
 
 **Phase 6 — notes and links.** The old Phase 4, done wiki-style: notes as
 first-class documents, `[[links]]`, backlinks, message-anchored highlights,

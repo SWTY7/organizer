@@ -230,6 +230,26 @@ export const chatgpt = {
     }));
   },
 
+  /**
+   * The bytes behind an image or file block. Uploads answer on
+   * `/backend-api/files/{id}/download`, byte-exact (Phase 0b). The id comes
+   * from `chatgpt-file://`, or from an image's `asset_pointer` —
+   * `sediment://file_…` or the older `file-service://file-…`.
+   *
+   * Generated images refused this route in the probe (FINDINGS 3b); they are
+   * tried anyway, and a refusal leaves the block a reference, as before.
+   */
+  async fetchAsset(b) {
+    const id = (String(b.srcRef || '').match(/^[a-z-]+:\/\/(.+)$/i) || [])[1];
+    if (!id || (b.type !== 'image' && b.type !== 'file')) return null;
+    const d = await this.http.getJson(`/backend-api/files/${encodeURIComponent(id)}/download`);
+    const url = d.download_url || d.url;
+    if (!url) throw new Error(d.error_code || d.status || 'no download address for this file');
+    // Same-origin, so cookies usually suffice; a bearer token is the fallback.
+    const r = await this.http.bytes(url);
+    return r.ok ? r : this.http.bytes(url, { withAuth: true });
+  },
+
   async convert(d) {
     const mapping = d.mapping || {};
 

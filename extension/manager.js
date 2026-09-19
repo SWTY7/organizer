@@ -8,6 +8,8 @@
 
 import { ADAPTERS } from './adapters/index.js';
 import { SCHEMA_VERSION, sleep, RATE_MS } from './adapters/shared.js';
+import { zip } from './adapters/zip.js';
+import { captureAssets } from './adapters/capture.js';
 
 const $ = (s) => document.querySelector(s);
 const el = (t, cls, txt) => {
@@ -27,6 +29,9 @@ let onlyNew = false;
 let onlyStar = false;
 let groupBy = 'none';
 let exporting = false;
+let keepAssets = true;            // images and files, fetched while they still exist
+
+const fmtBytes = (n) => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} bytes`);
 
 /* Loading is tracked per provider, not globally: the two are independent
    requests and a shared flag meant clicking the second button while the first
@@ -302,6 +307,26 @@ async function runExport() {
     if (i < rows.length - 1) await sleep(RATE_MS);
   }
 
+  // Attachments, per provider, since only the adapter knows how to fetch its own.
+  let assets = { blobs: new Map(), saved: 0, failed: [], skipped: 0, bytes: 0 };
+  if (keepAssets && conversations.length) {
+    for (const [id, st] of P) {
+      const mine = conversations.filter((c) => c.provider === id);
+      if (!mine.length || !st.adapter.fetchAsset) continue;
+      const r = await captureAssets(mine, (b) => st.adapter.fetchAsset(b), {
+        pause: () => sleep(RATE_MS),
+        onProgress: ({ done, total, bytes }) => {
+          $('#selCount').textContent = total
+            ? `Saving images and files from ${st.adapter.label}… ${done} of ${total} (${fmtBytes(assets.bytes + bytes)})`
+            : '';
+        },
+      });
+      for (const [h, b] of r.blobs) assets.blobs.set(h, b);
+      assets.saved += r.saved; assets.skipped += r.skipped; assets.bytes += r.bytes;
+      assets.failed.push(...r.failed);
+    }
+  }
+
   const providers = [...new Set(conversations.map((c) => c.provider))];
   const pack = {
     manifest: {
@@ -316,8 +341,22 @@ async function runExport() {
     conversations,
   };
 
-  const name = `${providers.join('-') || 'chats'}-${conversations.length}-${Date.now()}.chatpack.json`;
-  const url = URL.createObjectURL(new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' }));
+  // With attachments, a .chatpack.zip (SPEC.md): conversations and blobs side
+  // by side. Without, the plain .chatpack.json it has always been.
+  const base = `${providers.join('-') || 'chats'}-${conversations.length}-${Date.now()}`;
+  let name, file;
+  if (assets.blobs.size) {
+    name = `${base}.chatpack.zip`;
+    file = new Blob([await zip([
+      { name: 'manifest.json', data: JSON.stringify({ ...pack.manifest, blobCount: assets.blobs.size }, null, 2) },
+      ...conversations.map((c) => ({ name: `conversations/${c.id}.chat.json`, data: JSON.stringify(c) })),
+      ...[...assets.blobs].map(([h, b]) => ({ name: `blobs/${h}`, data: b })),
+    ])], { type: 'application/zip' });
+  } else {
+    name = `${base}.chatpack.json`;
+    file = new Blob([JSON.stringify(pack, null, 2)], { type: 'application/json' });
+  }
+  const url = URL.createObjectURL(file);
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
@@ -331,10 +370,15 @@ async function runExport() {
   renderCards();
   renderList();
 
-  $('#selCount').textContent = failures.length
-    ? `Saved ${conversations.length}; ${failures.length} failed`
-    : `Saved ${conversations.length} to ${name}`;
+  const bits = [`Saved ${conversations.length} chat${conversations.length === 1 ? '' : 's'}`];
+  if (assets.saved) bits.push(`${assets.saved} image${assets.saved === 1 ? '' : 's'} and files (${fmtBytes(assets.bytes)})`);
+  let msg = `${bits.join(' and ')} to ${name}.`;
+  if (failures.length) msg += ` ${failures.length} chat${failures.length === 1 ? '' : 's'} failed.`;
+  if (assets.failed.length) msg += ` ${assets.failed.length} attachment${assets.failed.length === 1 ? '' : 's'} could not be downloaded and stay as references.`;
+  if (assets.skipped) msg += ` ${assets.skipped} too large, left as references.`;
+  $('#selCount').textContent = msg;
   if (failures.length) console.table(failures);
+  if (assets.failed.length) console.table(assets.failed);
 }
 
 /* -------------------------------------------------------------------- wire */
@@ -355,7 +399,13 @@ $('#selInvert').onclick = () => {
   renderList();
 };
 $('#export').onclick = runExport;
+$('#keepAssets').addEventListener('change', (e) => {
+  keepAssets = e.target.checked;
+  storage.set({ keepAssets });
+});
 
 await loadLog();
+keepAssets = (await storage.get('keepAssets')).keepAssets !== false;
+$('#keepAssets').checked = keepAssets;
 renderCards();
 renderList();

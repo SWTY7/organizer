@@ -242,8 +242,12 @@ real branching or a splice, and is worth surfacing rather than hiding.
 - [ ] Are provider message ids stable across re-captures, or regenerated per
       request? `stableKey` degrades to content-hashing if they aren't. Needs two
       captures of the same conversation a day apart.
-- [ ] Attachment fetch: exact endpoint and auth for resolving Claude
-      `preview_url` and ChatGPT `asset_pointer` to bytes.
+- [x] Attachment fetch: Claude images via `preview_url` on session cookies;
+      ChatGPT uploads via `/backend-api/files/{id}/download` (Phase 0b).
+      Implemented as `fetchAsset` on each adapter, writing `blobHash` and
+      `blobs/<sha256>`. The manifest of a zip with blobs adds `blobCount`.
+- [ ] ChatGPT generated images (`sediment://` pointers) — refused by the
+      download route in the probe; still open.
 - [ ] ChatGPT list pagination past the first page (`total` was 21, under one page).
 - [ ] Whether ChatGPT node `id` always equals `message.id`.
 - [ ] Gemini — deferred to Phase 5, see [PLAN.md](PLAN.md).
