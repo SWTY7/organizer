@@ -34,6 +34,7 @@ import {
 import { md } from './lib/md.js';
 import { movePicker, tagPicker, star, archive, remove, plural } from './actions.js';
 import { provName } from './explorer.js';
+import { renderNoteReader } from './notes.js';
 
 export const TEMPLATES = {
   transcript: { label: 'Transcript', icon: 'rows', hint: 'Every message, top to bottom' },
@@ -1410,6 +1411,7 @@ function emptyReader() {
 /* ---------------------------------------------------------------- render */
 
 export function renderReader() {
+  if (S.openNoteId && !S.openId) { renderNoteReader(); return; }
   const host = $('#reader');
   const conv = convById(S.openId);
   const same = host.dataset.conv === (conv?.id || '') && host.dataset.tmpl === S.template;

@@ -15,13 +15,14 @@ import * as SEC from '../packages/organize/sections.js';
 import * as SUG from '../packages/organize/suggest.js';
 import { uid } from './lib/dom.js';
 import { unzip, isZip, sha256Bytes } from '../packages/adapters/zip.js';
+import * as WL from '../packages/organize/wikilinks.js';
 
 /** Redraw hooks, assigned by app.js. */
 export const R = { all() {}, explorer() {}, reader() {}, inspector() {}, bulk() {} };
 
 /* ------------------------------------------------------------------ store */
 
-export const STORES = ['conversations', 'meta', 'folders', 'smart'];
+export const STORES = ['conversations', 'meta', 'folders', 'smart', 'notes'];
 /* Images and files, by the SHA-256 of their bytes. Kept out of STORES because
    those are all read into memory on load, and these are read one at a time,
    when something on screen needs one. */
@@ -32,14 +33,14 @@ export const STORE = {
   db: null,
   ephemeral: false,
   reason: null,
-  mem: { conversations: new Map(), meta: new Map(), folders: new Map(), smart: new Map(), blobs: new Map() },
+  mem: { conversations: new Map(), meta: new Map(), folders: new Map(), smart: new Map(), notes: new Map(), blobs: new Map() },
 
   async open() {
     // Chrome denies IndexedDB to file:// and other opaque origins. Fall back to
     // memory for the session rather than dying, and say so in the UI.
     try {
       this.db = await new Promise((res, rej) => {
-        const r = indexedDB.open('organizer', 3);
+        const r = indexedDB.open('organizer', 4);
         r.onupgradeneeded = () => {
           const db = r.result;
           if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' });
@@ -47,6 +48,7 @@ export const STORE = {
           if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
           if (!db.objectStoreNames.contains('smart')) db.createObjectStore('smart', { keyPath: 'id' });
           if (!db.objectStoreNames.contains(BLOBS)) db.createObjectStore(BLOBS, { keyPath: 'hash' });
+          if (!db.objectStoreNames.contains('notes')) db.createObjectStore('notes', { keyPath: 'id' });
         };
         r.onsuccess = () => res(r.result);
         r.onerror = () => rej(r.error);
@@ -122,10 +124,13 @@ export const S = {
   meta: new Map(),        // convId -> {convId, folderId, tags[], starred, archived, sections[]}
   folders: [],            // {id, name, parentId}
   smart: [],              // {id, name, q}
+  notes: [],              // {id, title, body, createdAt, updatedAt} — see "notes" below
   index: new Map(),
   providers: new Set(),
 
   openId: null,
+  openNoteId: null,
+  noteMode: 'write',    // Notes: 'write' (a textarea) or 'read' (rendered, links live)
   query: '',
   provider: null,
   view: { kind: 'all', id: null },  // 'all' means the tree; anything else is a flat list
@@ -162,6 +167,7 @@ export const S = {
  */
 export function openConv(id) {
   S.openId = id;
+  S.openNoteId = null;
   S.branchPick.clear();
   S.compare.clear();
   S.focusAt = 0;
@@ -742,10 +748,101 @@ export async function dropBoardCol(convId, id) {
   return () => setMeta([convId], before);
 }
 
+/* -------------------------------------------------------------------- notes */
+
+/**
+ * Notes are documents you write, not conversations you imported — the one
+ * place in this app where the content is yours from the start. They live in
+ * their own store, sorted here by most recently touched.
+ */
+export const notesList = () => [...S.notes].sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+export const noteById = (id) => S.notes.find((n) => n.id === id) || null;
+const byTitle = (list, title) => {
+  const key = String(title || '').trim().toLowerCase();
+  return key ? list.find((x) => (x.title || '').trim().toLowerCase() === key) : null;
+};
+
+export async function createNote(title, body = '') {
+  const now = new Date().toISOString();
+  const n = { id: uid(), title: (title || '').trim() || 'Untitled note', body, createdAt: now, updatedAt: now };
+  S.notes.push(n);
+  await STORE.put('notes', [n]);
+  return n;
+}
+export async function renameNote(id, title) {
+  const n = noteById(id);
+  if (!n) return;
+  n.title = (title || '').trim() || n.title;
+  n.updatedAt = new Date().toISOString();
+  await STORE.put('notes', [n]);
+}
+export async function saveNoteBody(id, body) {
+  const n = noteById(id);
+  if (!n || n.body === body) return;
+  n.body = body;
+  n.updatedAt = new Date().toISOString();
+  await STORE.put('notes', [n]);
+}
+/** Returns the deleted row, so the caller can offer Undo. */
+export async function deleteNote(id) {
+  const n = noteById(id);
+  if (!n) return null;
+  S.notes = S.notes.filter((x) => x.id !== id);
+  await STORE.del('notes', [id]);
+  if (S.openNoteId === id) S.openNoteId = null;
+  return n;
+}
+export async function restoreNote(n) {
+  if (!n || noteById(n.id)) return;
+  S.notes.push(n);
+  await STORE.put('notes', [n]);
+}
+
+/** Open a note. Mirrors openConv: the two are mutually exclusive readers. */
+export function openNote(id) {
+  S.openId = null;
+  S.openNoteId = id;
+  R.all();
+}
+
+/**
+ * What a `[[Target]]` in a note points at: a note by title first, then a
+ * conversation by title, else nothing — reported as a stub to create, not
+ * quietly dropped (READING.md's sectioning rule, applied here too: a guess
+ * that turns out wrong should be visible and correctable, never silent).
+ */
+export function resolveWikiTarget(target) {
+  const note = byTitle(S.notes, target);
+  if (note) return { kind: 'note', id: note.id, title: note.title };
+  const conv = byTitle(S.convs, target);
+  if (conv) return { kind: 'conv', id: conv.id, title: conv.title || '(untitled)' };
+  return null;
+}
+
+/** Every resolved [[link]] out of every note. Recomputed on demand — the
+    library is small enough that this is cheap, and a cache someone forgets
+    to invalidate is a worse bug than a few extra passes over short text. */
+export function allWikilinks() {
+  const out = [];
+  for (const n of S.notes) {
+    for (const l of WL.extractLinks(n.body)) {
+      const res = resolveWikiTarget(l.target);
+      if (res) out.push({ from: n, target: l.target, ...res });
+    }
+  }
+  return out;
+}
+export const backlinksToNote = (id) => allWikilinks().filter((l) => l.kind === 'note' && l.id === id);
+export const backlinksToConv = (id) => allWikilinks().filter((l) => l.kind === 'conv' && l.id === id);
+/** A note's own outgoing links, resolved or not, for its own footer. */
+export const outLinksOf = (note) =>
+  WL.extractLinks(note.body).map((l) => ({ target: l.target, res: resolveWikiTarget(l.target) }));
+
 /* ------------------------------------------------------------------- load */
 
 export async function load() {
-  const [convs, meta, folders, smart] = await Promise.all(STORES.map((s) => STORE.all(s)));
+  const [convs, meta, folders, smart, notes] = await Promise.all(STORES.map((s) => STORE.all(s)));
+  S.notes = notes;
   S.convs = convs.sort((a, b) =>
     String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
   S.meta = new Map(meta.map((m) => [m.convId, { tags: [], sections: [], cardMoves: {}, boardCols: [], ...m }]));
@@ -754,4 +851,5 @@ export async function load() {
   await repairFolders();
   reindex();
   if (S.openId && !convById(S.openId)) S.openId = null;
+  if (S.openNoteId && !noteById(S.openNoteId)) S.openNoteId = null;
 }

@@ -908,3 +908,51 @@ figure.gimg { margin: 0; padding: 10px; }
 figure.gimg img { display: block; max-width: 100%; height: auto; max-height: 200px; margin: 0 auto; border-radius: 6px; cursor: zoom-in; }
 .gb > .attach.saved { margin: 10px; }
 .gb:has(> figure.gimg), .gb:has(> .attach) { -webkit-mask-image: none; mask-image: none; }
+
+/* ------------------------------------------------------------------ notes */
+.trow.note .i-file { color: var(--fg-3); }
+
+/* The note reader/editor: same chrome as a conversation, its own content. */
+.note-head { margin-bottom: 14px; }
+.note-title {
+  display: block; width: 100%; border: 0; outline: 0; background: none; padding: 0;
+  font-size: 24px; line-height: 1.25; font-weight: 600; letter-spacing: -.015em; color: var(--fg);
+  margin: 0 0 8px;
+}
+.note-title::placeholder { color: var(--fg-3); }
+.note-col { max-width: 720px; }
+
+.ntool { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.ntool .btn { height: 28px; }
+.nhint { color: var(--fg-3); font-size: 12px; }
+.nbody {
+  width: 100%; min-height: 50vh; border: 0; outline: 0; resize: vertical; background: none; color: var(--fg);
+  font: 14.5px/1.7 var(--sans); padding: 0;
+}
+.note-prose { min-height: 30vh; }
+.note-prose em { color: var(--fg-3); }
+
+/* A wikilink reads as a link, styled apart from an ordinary <a> so a note
+   full of both is easy to scan. An unresolved one is dashed, on purpose — it
+   is not broken, it just does not exist yet. */
+a.wikilink {
+  color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent;
+  padding: 0 1px; border-radius: 3px;
+}
+a.wikilink:hover { border-bottom-color: currentColor; background: var(--sel); }
+a.wikilink.new { color: var(--fg-2); border-bottom: 1px dashed var(--line-2); }
+a.wikilink.new:hover { color: var(--fg); border-bottom-color: var(--fg-3); background: var(--hover); }
+
+.note-links { margin-top: 30px; padding-top: 18px; border-top: 1px solid var(--line); }
+.nl-h { color: var(--fg-3); font-size: 11.5px; font-weight: 600; margin: 14px 0 6px; }
+.nl-h:first-child { margin-top: 0; }
+.nl-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.lchip {
+  display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 11px;
+  border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--fg); font-size: 13px;
+}
+.lchip:hover { background: var(--hover); border-color: var(--line-2); }
+.lchip .i { width: 14px; height: 14px; color: var(--fg-3); }
+.lchip-sub { color: var(--fg-3); font-size: 11.5px; }
+.ibtn.idanger:hover { background: var(--danger-bg); color: var(--danger); }
+.noterow { display: block; margin: 2px 0; }

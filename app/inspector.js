@@ -9,9 +9,10 @@
 import * as O from '../packages/organize/outline.js';
 import * as SEC from '../packages/organize/sections.js';
 import * as BR from '../packages/organize/branches.js';
-import { S, R, metaOf, convById, mainPath, folderPath, shownSections, revealFolder } from './core.js';
+import { S, R, metaOf, convById, mainPath, folderPath, shownSections, revealFolder, backlinksToConv, openNote } from './core.js';
 import { $, $$, el, icon, iconBtn, fmtDate } from './lib/dom.js';
 import { newSection, renameSection, removeSection, turnText, suggestSections, keepOne, dismissOne } from './reader.js';
+import { renderNoteInspector } from './notes.js';
 import { provName } from './explorer.js';
 import { plural } from './actions.js';
 
@@ -23,6 +24,7 @@ const weight = (t) => {
 };
 
 export function renderInspector() {
+  if (S.openNoteId && !S.openId) { renderNoteInspector(); return; }
   const host = $('#inspector');
   const conv = convById(S.openId);
   const same = host.dataset.conv === (conv?.id || '');
@@ -161,6 +163,20 @@ function detailsBlock(conv, path) {
     if (b.type === 'image') images++;
   }
   if (files || images) row('Attached', [files && plural(files, 'file'), images && plural(images, 'image')].filter(Boolean).join(', '));
+
+  const back = backlinksToConv(conv.id);
+  if (back.length) {
+    const wrap = el('div');
+    for (const l of back) {
+      const b = el('button', 'link noterow');
+      b.type = 'button';
+      b.textContent = l.from.title;
+      b.title = 'Open this note';
+      b.onclick = () => openNote(l.from.id);
+      wrap.append(b);
+    }
+    row(plural(back.length, 'note'), wrap);
+  }
   return d;
 }
 

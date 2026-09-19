@@ -14,6 +14,7 @@ import {
   folderChildren, folderPath, chatsIn, toggleFolder,
   createFolder, renameFolder, moveFolder, deleteFolder, folderDeleteImpact,
   addTag, renameTag, deleteTag, saveSearch, deleteSearch, restoreSearch, clearLibrary,
+  notesList, createNote, renameNote, deleteNote, restoreNote, openNote,
 } from './core.js';
 import {
   $, $$, el, esc, icon, iconBtn, btn, menu, at, confirmDialog, askText, toast, inlineEdit, fmtDate,
@@ -161,6 +162,12 @@ function treeView() {
   if (!S.folders.length) {
     t.append(el('div', 'hint', 'Drag chats onto a folder to file them. Claude projects become folders on import.'));
   }
+
+  t.append(sectionHead('Notes', iconBtn('plus', 'New note', () => startNewNote())));
+  if (editing('new-note', '__new')) t.append(newNoteRow());
+  const notes = notesList();
+  if (notes.length) for (const n of notes) t.append(noteRow(n));
+  else if (!editing('new-note', '__new')) t.append(el('div', 'hint', 'Write things that are not one chat — [[link]] to any chat or note by title.'));
 
   const tags = [...c.tag].sort((a, b) => a[0].localeCompare(b[0]));
   if (tags.length) {
@@ -315,6 +322,66 @@ function tagRow(tag, n) {
   return row;
 }
 
+function noteRow(n) {
+  const renaming = editing('rename-note', n.id);
+  const row = el('div', `trow note${renaming ? ' editing' : ''}`);
+  row.style.setProperty('--d', 0);
+  row.dataset.note = n.id;
+  if (S.openNoteId === n.id) row.setAttribute('aria-current', 'true');
+  row.title = n.title;
+  row.append(el('span', 'tw'), icon('file'));
+  const lbl = el('span', 'lbl');
+  if (renaming) {
+    inlineEdit(lbl, {
+      value: n.title,
+      onCommit: async (v) => { S.editing = null; await renameNote(n.id, v); R.all(); },
+      onCancel: stopEditing,
+    });
+  } else lbl.textContent = n.title;
+  row.append(lbl);
+
+  const acts = el('span', 'acts');
+  acts.append(iconBtn('dots', 'Note options', (e) => noteMenu(n, at(e))));
+  row.append(acts);
+  if (!renaming) {
+    row.onclick = () => openNote(n.id);
+    row.oncontextmenu = (e) => { e.preventDefault(); noteMenu(n, at(e)); };
+  }
+  return row;
+}
+
+function newNoteRow() {
+  const row = el('div', 'trow note editing');
+  row.style.setProperty('--d', 0);
+  row.append(el('span', 'tw'), icon('file'));
+  const lbl = el('span', 'lbl');
+  inlineEdit(lbl, {
+    placeholder: 'Note title',
+    onCommit: async (v) => { S.editing = null; const n = await createNote(v); R.all(); openNote(n.id); },
+    onCancel: stopEditing,
+  });
+  row.append(lbl);
+  return row;
+}
+
+function noteMenu(n, anchor) {
+  menu([
+    { label: 'Open', icon: 'file', run: () => openNote(n.id) },
+    { label: 'Rename', icon: 'pencil', run: () => { S.editing = { kind: 'rename-note', id: n.id }; renderExplorer(); } },
+    '-',
+    {
+      label: 'Delete note', icon: 'trash', danger: true,
+      run: async () => {
+        const ok = await confirmDialog({ title: `Delete “${n.title}”?`, ok: 'Delete note', danger: true });
+        if (!ok) return;
+        const gone = await deleteNote(n.id);
+        R.all();
+        toast(`Deleted “${gone.title}”`, { label: 'Undo', run: async () => { await restoreNote(gone); R.all(); } });
+      },
+    },
+  ], anchor);
+}
+
 function smartRow(s) {
   const row = el('div', 'trow smart');
   row.style.setProperty('--d', 0);
@@ -391,6 +458,11 @@ function exitList() {
     $('#q').value = '';
   }
   renderExplorer();
+}
+
+export function startNewNote() {
+  S.editing = { kind: 'new-note', id: '__new' };
+  exitList();
 }
 
 export function startNewFolder(parentId) {

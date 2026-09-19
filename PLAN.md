@@ -368,9 +368,29 @@ in Phase 0b; ChatGPT generated images are still expected to be refused
 export script still writes JSON only. Running React artifacts, and Mermaid,
 remain deferred as planned.
 
-**Phase 6 — notes and links.** The old Phase 4, done wiki-style: notes as
-first-class documents, `[[links]]`, backlinks, message-anchored highlights,
-snippet library. §12.1.
+**Phase 6 — notes and links. Notes/links/backlinks built 2026-09-20;
+message-anchored highlights and the snippet library still to come.** The old
+Phase 4, done wiki-style: notes as first-class documents, `[[links]]`,
+backlinks, message-anchored highlights, snippet library. §12.1.
+
+What exists: a **Notes** section in the sidebar, alongside Folders — its own
+store, never touching an imported conversation. A note's body is markdown
+with `[[Title]]` or `[[Title|shown text]]`, resolved against note titles
+first and then conversation titles (`resolveWikiTarget` in `app/core.js`);
+an unresolved link still renders as a real, clickable stub — clicking it
+creates that note, per the standing rule that a guess or a gap is always
+visible and actionable, never silent. `packages/organize/wikilinks.js` does
+the pure token-and-resolve work, kept separate from `app/lib/md.js` so
+conversation text (untrusted, provider-authored) is untouched by wiki
+syntax; only a note's own body goes through it. Every note shows its
+outgoing links and what links back to it; every conversation's Details
+panel shows which notes mention it. A Link toolbar button opens the same
+`picker()` used elsewhere in the app, with its "create" option for a link
+to a note that does not exist yet. 7 new tests for the pure module.
+
+Deferred to a later pass: filing notes into folders (they are a flat list
+for now), full-text search reaching into notes, and the two items still
+named above — highlights and a snippet library.
 
 **Phase 7 — graph.** Canvas force layout over conversations, folders, tags and
 notes. §12.2.
