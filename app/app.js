@@ -38,12 +38,13 @@ Object.assign(R, {
 /* --------------------------------------------------------------- import */
 
 async function doImport(files) {
-  const json = [...files].filter((f) => /\.json$/i.test(f.name));
-  if (!json.length) { toast('Only .chat.json and .chatpack.json files can be imported'); return; }
+  const json = [...files].filter((f) => /\.(json|zip)$/i.test(f.name));
+  if (!json.length) { toast('Only .chat.json, .chatpack.json and .chatpack.zip files can be imported'); return; }
   const r = await importFiles(json);
   R.all();
   if (r.added) {
     toast(`Imported ${plural(r.added, 'chat')}` +
+      (r.blobs ? ` · ${plural(r.blobs, 'image or file', 'images and files')}` : '') +
       (r.folders ? ` · ${plural(r.folders, 'folder')} from Claude projects` : ''));
   }
   if (r.errors.length) {

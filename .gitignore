@@ -27,9 +27,11 @@ Thumbs.db
 
 # Exported chat data — real conversation content, never commit
 *.chatpack.json
+*.chatpack.zip
 
 # …but committed fixtures are synthetic and safe
 !fixtures/*.json
+!fixtures/*.chatpack.zip
 
 # Vendored third-party assets fetched by npm run math
 app/vendor/

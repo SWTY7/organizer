@@ -14,6 +14,7 @@ import * as T from '../packages/organize/folders.js';
 import * as SEC from '../packages/organize/sections.js';
 import * as SUG from '../packages/organize/suggest.js';
 import { uid } from './lib/dom.js';
+import { unzip, isZip, sha256Bytes } from '../packages/adapters/zip.js';
 
 /** Redraw hooks, assigned by app.js. */
 export const R = { all() {}, explorer() {}, reader() {}, inspector() {}, bulk() {} };
@@ -21,25 +22,31 @@ export const R = { all() {}, explorer() {}, reader() {}, inspector() {}, bulk() 
 /* ------------------------------------------------------------------ store */
 
 export const STORES = ['conversations', 'meta', 'folders', 'smart'];
+/* Images and files, by the SHA-256 of their bytes. Kept out of STORES because
+   those are all read into memory on load, and these are read one at a time,
+   when something on screen needs one. */
+const BLOBS = 'blobs';
+const EVERY = [...STORES, BLOBS];
 
 export const STORE = {
   db: null,
   ephemeral: false,
   reason: null,
-  mem: { conversations: new Map(), meta: new Map(), folders: new Map(), smart: new Map() },
+  mem: { conversations: new Map(), meta: new Map(), folders: new Map(), smart: new Map(), blobs: new Map() },
 
   async open() {
     // Chrome denies IndexedDB to file:// and other opaque origins. Fall back to
     // memory for the session rather than dying, and say so in the UI.
     try {
       this.db = await new Promise((res, rej) => {
-        const r = indexedDB.open('organizer', 2);
+        const r = indexedDB.open('organizer', 3);
         r.onupgradeneeded = () => {
           const db = r.result;
           if (!db.objectStoreNames.contains('conversations')) db.createObjectStore('conversations', { keyPath: 'id' });
           if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'convId' });
           if (!db.objectStoreNames.contains('folders')) db.createObjectStore('folders', { keyPath: 'id' });
           if (!db.objectStoreNames.contains('smart')) db.createObjectStore('smart', { keyPath: 'id' });
+          if (!db.objectStoreNames.contains(BLOBS)) db.createObjectStore(BLOBS, { keyPath: 'hash' });
         };
         r.onsuccess = () => res(r.result);
         r.onerror = () => rej(r.error);
@@ -54,7 +61,7 @@ export const STORE = {
   async put(store, rows) {
     if (!rows.length) return;
     if (this.ephemeral) {
-      const key = store === 'meta' ? 'convId' : 'id';
+      const key = store === 'meta' ? 'convId' : store === BLOBS ? 'hash' : 'id';
       for (const r of rows) this.mem[store].set(r[key], r);
       return;
     }
@@ -73,6 +80,24 @@ export const STORE = {
     return new Promise((res) => { tx.oncomplete = res; });
   },
 
+  async get(store, key) {
+    if (this.ephemeral) return this.mem[store].get(key) || null;
+    return new Promise((res, rej) => {
+      const r = this.db.transaction(store, 'readonly').objectStore(store).get(key);
+      r.onsuccess = () => res(r.result || null);
+      r.onerror = () => rej(r.error);
+    });
+  },
+
+  async keys(store) {
+    if (this.ephemeral) return [...this.mem[store].keys()];
+    return new Promise((res, rej) => {
+      const r = this.db.transaction(store, 'readonly').objectStore(store).getAllKeys();
+      r.onsuccess = () => res(r.result || []);
+      r.onerror = () => rej(r.error);
+    });
+  },
+
   async all(store) {
     if (this.ephemeral) return [...this.mem[store].values()];
     return new Promise((res, rej) => {
@@ -83,9 +108,9 @@ export const STORE = {
   },
 
   async clearAll() {
-    if (this.ephemeral) { for (const s of STORES) this.mem[s].clear(); return; }
-    const tx = this.db.transaction(STORES, 'readwrite');
-    for (const s of STORES) tx.objectStore(s).clear();
+    if (this.ephemeral) { for (const s of EVERY) this.mem[s].clear(); return; }
+    const tx = this.db.transaction(EVERY, 'readwrite');
+    for (const s of EVERY) tx.objectStore(s).clear();
     return new Promise((res) => { tx.oncomplete = res; });
   },
 };
@@ -127,7 +152,8 @@ export const S = {
   colsTransposed: false,  // Columns: sections across (default) or sections stacked
   turnEls: [],            // first element of each exchange, for the inspector
   activeTurn: 0,
-  revealPending: false,   // scroll the tree to the open chat, once
+  revealPending: false,
+  blobKeys: null,         // Set of stored blob hashes, read once   // scroll the tree to the open chat, once
 };
 
 /**
@@ -241,13 +267,66 @@ async function seedFolders(convs) {
   return newFolders.length;
 }
 
-/** Returns {added, folders, errors}; the caller decides how to say so. */
+/** What a file is, from its first bytes — for a blob whose block did not say. */
+function sniff(b) {
+  const at = (i, ...xs) => xs.every((x, k) => b[i + k] === x);
+  if (at(0, 0x89, 0x50, 0x4e, 0x47)) return 'image/png';
+  if (at(0, 0xff, 0xd8, 0xff)) return 'image/jpeg';
+  if (at(0, 0x47, 0x49, 0x46, 0x38)) return 'image/gif';
+  if (at(0, 0x52, 0x49, 0x46, 0x46) && at(8, 0x57, 0x45, 0x42, 0x50)) return 'image/webp';
+  if (at(0, 0x25, 0x50, 0x44, 0x46)) return 'application/pdf';
+  return 'application/octet-stream';
+}
+
+/**
+ * A .chatpack.zip: conversations/*.json plus blobs/<sha256>. Every blob is
+ * checked against its name before it is kept — a file that does not match
+ * its own hash is damaged, and is reported rather than shown.
+ */
+async function readZip(bytes, filename, errors) {
+  const files = await unzip(bytes);
+  const convs = [];
+  for (const [name, data] of files) {
+    if (!/\.json$/i.test(name) || /(^|\/)manifest\.json$/i.test(name) || /(^|\/)overlay\.json$/i.test(name)) continue;
+    try { convs.push(...readPayload(JSON.parse(new TextDecoder().decode(data)), `${filename} › ${name}`)); }
+    catch (e) { errors.push(e instanceof SyntaxError ? `${filename} › ${name}: not valid JSON.` : e.message); }
+  }
+  if (!convs.length) throw new Error(`${filename}: no conversations in it. Is it a .chatpack.zip?`);
+
+  const mimeOf = new Map();
+  for (const c of convs) for (const m of c.messages) for (const b of m.content || []) {
+    if (b.blobHash && b.mime) mimeOf.set(b.blobHash, b.mime);
+  }
+  const blobs = [];
+  let bad = 0;
+  for (const [name, data] of files) {
+    const hash = (name.match(/^blobs\/([0-9a-f]{64})$/i) || [])[1]?.toLowerCase();
+    if (!hash) continue;
+    if (await sha256Bytes(data) !== hash) { bad++; continue; }
+    const mime = mimeOf.get(hash) || sniff(data);
+    blobs.push({ hash, mime, size: data.length, data: new Blob([data], { type: mime }) });
+  }
+  if (bad) errors.push(`${filename}: ${bad} attached file${bad > 1 ? 's were' : ' was'} damaged and left out.`);
+  await STORE.put(BLOBS, blobs);
+  return { convs, blobs: blobs.length };
+}
+
+/** Returns {added, blobs, folders, errors}; the caller decides how to say so. */
 export async function importFiles(files) {
   const added = [];
   const errors = [];
+  let blobs = 0;
   for (const f of files) {
-    try { added.push(...readPayload(JSON.parse(await f.text()), f.name)); }
-    catch (e) { errors.push(e instanceof SyntaxError ? `${f.name}: not valid JSON.` : e.message); }
+    try {
+      const bytes = new Uint8Array(await f.arrayBuffer());
+      if (isZip(bytes)) {
+        const r = await readZip(bytes, f.name, errors);
+        added.push(...r.convs);
+        blobs += r.blobs;
+      } else {
+        added.push(...readPayload(JSON.parse(new TextDecoder().decode(bytes)), f.name));
+      }
+    } catch (e) { errors.push(e instanceof SyntaxError ? `${f.name}: not valid JSON.` : e.message); }
   }
   let seeded = 0;
   if (added.length) {
@@ -258,7 +337,39 @@ export async function importFiles(files) {
     seeded = await seedFolders(added);
     await load();
   }
-  return { added: added.length, folders: seeded, errors };
+  if (blobs) S.blobKeys = null;
+  return { added: added.length, blobs, folders: seeded, errors };
+}
+
+/* ------------------------------------------------------------------ blobs */
+
+const blobUrls = new Map(); // hash -> object URL, made once per session
+
+/** An object URL for a stored blob, or null if it was never captured. */
+export async function blobUrl(hash) {
+  if (!hash) return null;
+  if (blobUrls.has(hash)) return blobUrls.get(hash);
+  const row = await STORE.get(BLOBS, hash);
+  if (!row) return null; // not remembered: a later import may bring it
+  const url = URL.createObjectURL(row.data);
+  blobUrls.set(hash, url);
+  return url;
+}
+
+/** Which blobs are here, so a block can say "saved" without loading it. */
+export async function blobKeys() {
+  S.blobKeys ||= new Set(await STORE.keys(BLOBS));
+  return S.blobKeys;
+}
+
+/** How much space attachments take, for the details panel. */
+export async function blobUsage(hashes) {
+  let n = 0, bytes = 0;
+  for (const h of new Set(hashes)) {
+    const r = await STORE.get(BLOBS, h);
+    if (r) { n++; bytes += r.size || r.data?.size || 0; }
+  }
+  return { n, bytes };
 }
 
 /* ------------------------------------------------------------- text index */

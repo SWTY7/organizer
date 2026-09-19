@@ -84,10 +84,10 @@ export function items(turns) {
             add({ kind: 'code', lang: b.lang || '', text: b.text || '' });
             break;
           case 'image':
-            add({ kind: 'image', title: b.filename || 'Image', width: b.width, height: b.height });
+            add({ kind: 'image', title: b.filename || 'Image', filename: b.filename, width: b.width, height: b.height, blobHash: b.blobHash, mime: b.mime });
             break;
           case 'file':
-            add({ kind: 'file', title: b.filename || 'File', text: b.text || '' });
+            add({ kind: 'file', title: b.filename || 'File', filename: b.filename, text: b.text || '', blobHash: b.blobHash, mime: b.mime, meta: b.meta });
             break;
           case 'tool_use':
             if (editOf(b)) { if (b.id) edits.add(b.id); break; }

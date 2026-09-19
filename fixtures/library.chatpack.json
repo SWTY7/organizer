@@ -1138,7 +1138,16 @@
      "content": [
       {
        "type": "text",
-       "text": "Make me a one-page landing site for a tea shop."
+       "text": "Make me a one-page landing site for a tea shop. Here is the shopfront, for colours."
+      },
+      {
+       "type": "image",
+       "filename": "storefront.png",
+       "mime": "image/png",
+       "width": 160,
+       "height": 100,
+       "blobHash": "7780ea5fe5339a160c99bba8e056db4631fb3ef0df40ecc70207251e8c6fbbb1",
+       "srcRef": "https://claude.ai/api/example/files/storefront/preview"
       }
      ],
      "stableKey": "m-001s",
@@ -1185,7 +1194,17 @@
      "content": [
       {
        "type": "text",
-       "text": "Make the headline warmer and add opening hours."
+       "text": "Make the headline warmer and add opening hours — they are on the menu."
+      },
+      {
+       "type": "file",
+       "filename": "menu.pdf",
+       "mime": "application/pdf",
+       "blobHash": "3d3b0f620a0764b6ffb3a10899919b8bf8b20ef4416d6c85e80bb831505b64bc",
+       "text": "Leaf & Kettle - menu",
+       "meta": {
+        "declaredBytes": 397
+       }
       }
      ],
      "stableKey": "m-001u",

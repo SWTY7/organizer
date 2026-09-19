@@ -26,7 +26,7 @@ import {
   S, R, PREFS, metaOf, convById, mainPath, folderPath, sectionsOf, setSection, clearSection,
   dropSections, removeTag, openConv, blockText, revealFolder, cardMovesOf, moveCard, resetCard,
   boardColsOf, addBoardCol, renameBoardCol, dropBoardCol,
-  shownSections, suggestionsOf, runSuggest, dismissSuggestion, keepSuggestions, unkeepSuggestions,
+  blobUrl, shownSections, suggestionsOf, runSuggest, dismissSuggestion, keepSuggestions, unkeepSuggestions,
 } from './core.js';
 import {
   $, $$, el, icon, iconBtn, btn, menu, at, askText, confirmDialog, fmtDate, toast, picker, floatOpen, closeFloat,
@@ -83,14 +83,19 @@ function renderBlock(b) {
     case 'file': {
       // An uploaded document usually arrives with its text already extracted,
       // so there is something real to show rather than a shrug.
+      const saved = b.blobHash ? storedFile(b) : null;
       if (b.text) {
         const d = details(`${b.filename || 'Attached file'} · ${b.text.length.toLocaleString()} characters`, 'file');
         d.lastChild.append(codeBlock(b.text));
-        return d;
+        if (!saved) return d;
+        const both = el('div');
+        both.append(saved, d);
+        return both;
       }
-      return chip('file', b.filename || 'File', 'Not downloaded — captured as a reference');
+      return saved || chip('file', b.filename || 'File', 'Not downloaded — captured as a reference');
     }
     case 'image': {
+      if (b.blobHash) return storedImage(b);
       const dim = b.width && b.height ? `${b.width}×${b.height} · ` : '';
       return chip('image', b.filename || 'Image', `${dim}Not downloaded — captured as a reference`);
     }
@@ -102,6 +107,64 @@ function renderBlock(b) {
       return d;
     }
   }
+}
+
+/**
+ * An image that was captured with the chat. Read from this browser's own
+ * storage; if it is not there after all, say so rather than show a hole.
+ */
+export function storedImage(b, cls = 'img') {
+  const fig = el('figure', cls);
+  const img = el('img');
+  img.alt = b.alt || b.filename || 'Image';
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  if (b.width && b.height) { img.width = b.width; img.height = b.height; }
+  fig.append(img);
+  blobUrl(b.blobHash).then((url) => {
+    if (url) {
+      img.src = url;
+      img.title = 'Open full size';
+      img.onclick = () => window.open(url, '_blank', 'noopener');
+    } else {
+      fig.replaceWith(chip('image', b.filename || 'Image', 'Not saved in this library — captured as a reference'));
+    }
+  });
+  return fig;
+}
+
+const fmtBytes = (n) => (n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : n >= 1024 ? `${Math.round(n / 1024)} KB` : `${n} bytes`);
+
+/** Save a stored blob to disk under its own name — it is already local. */
+async function saveBlob(b) {
+  const url = await blobUrl(b.blobHash);
+  if (!url) { toast('That file is not saved in this library'); return; }
+  const a = el('a');
+  a.href = url;
+  a.download = b.filename || 'file';
+  a.click();
+}
+
+/** A file that was captured: its name, and Save / Open. */
+export function storedFile(b) {
+  const c = el('div', 'attach saved');
+  const size = b.meta?.declaredBytes ? ` · ${fmtBytes(b.meta.declaredBytes)}` : '';
+  c.append(icon('file'), el('span', 'an', b.filename || 'File'), el('span', 'as', `${b.mime || 'file'}${size} · saved`), el('span', 'grow'));
+  if (/^(application\/pdf|image\/|text\/plain)/.test(b.mime || '')) {
+    c.append(btn('external', 'Open', async () => {
+      const url = await blobUrl(b.blobHash);
+      if (url) window.open(url, '_blank', 'noopener'); else toast('That file is not saved in this library');
+    }, 'ghost'));
+  }
+  c.append(btn('save', 'Save', () => saveBlob(b), 'ghost'));
+  // Claim "saved" only once the bytes are confirmed to be here.
+  blobUrl(b.blobHash).then((url) => {
+    if (url) return;
+    c.classList.remove('saved');
+    for (const x of c.querySelectorAll('.btn')) x.remove();
+    c.querySelector('.as').textContent = 'Not saved in this library — captured as a reference';
+  });
+  return c;
 }
 
 function details(label, kind) {
@@ -995,7 +1058,7 @@ function galleryCard(it, t, n) {
   const drawn = it.kind === 'code' && drawable(it.lang, it.text);
   if (drawn) {
     body.append(preview(it.text, drawn));
-  } else if (it.kind === 'code' || it.kind === 'tool' || (it.kind === 'file' && it.text)) {
+  } else if (it.kind === 'code' || it.kind === 'tool' || (it.kind === 'file' && it.text && !it.blobHash)) {
     const pre = el('pre');
     pre.append(el('code', null, it.text || ''));
     body.append(pre);
@@ -1012,6 +1075,10 @@ function galleryCard(it, t, n) {
     a.rel = 'noopener noreferrer';
     body.append(a);
     if (it.title) body.append(el('div', 'gurl', it.url));
+  } else if (it.blobHash && it.kind === 'image') {
+    body.append(storedImage(it, 'gimg'));
+  } else if (it.blobHash) {
+    body.append(storedFile(it));
   } else {
     body.append(el('div', 'gref', `${it.kind === 'image' && it.width ? `${it.width}×${it.height} · ` : ''}Not downloaded — captured as a reference`));
   }

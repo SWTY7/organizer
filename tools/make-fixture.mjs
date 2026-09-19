@@ -9,6 +9,40 @@
  *   node tools/make-fixture.mjs
  */
 import { writeFile } from 'node:fs/promises';
+import { deflateSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
+import { zip, crc32 } from '../packages/adapters/zip.js';
+
+/* ------------------------------------------------ attachments, made here */
+// A real PNG and a real PDF, generated rather than committed as binaries, so
+// the zip fixture exercises saved images and files end to end.
+
+const sha = (b) => createHash('sha256').update(b).digest('hex');
+function png(w, h, px) {
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(td));
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0); ihdr.writeUInt32BE(h, 4); ihdr[8] = 8; ihdr[9] = 2;
+  const raw = Buffer.alloc((w * 3 + 1) * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set(px(x, y), y * (w * 3 + 1) + 1 + x * 3);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+}
+// A shopfront, roughly: sky, a green awning with stripes, a brown door.
+const STOREFRONT = png(160, 100, (x, y) => (y < 30 ? [196, 222, 240]
+  : y < 44 ? ((x >> 3) & 1 ? [107, 143, 78] : [245, 239, 230])
+    : x > 66 && x < 94 && y > 58 ? [120, 84, 52] : [236, 226, 208]));
+const MENU_PDF = Buffer.from([
+  '%PDF-1.4', '1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj',
+  '2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj',
+  '3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 200]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>endobj',
+  '4 0 obj<</Length 60>>stream', 'BT /F1 18 Tf 30 150 Td (Leaf & Kettle - menu) Tj ET', 'endstream endobj',
+  '5 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj', 'trailer<</Root 1 0 R>>', '%%EOF',
+].join('\n'));
+const BLOBS = new Map([[sha(STOREFRONT), STOREFRONT], [sha(MENU_PDF), MENU_PDF]]);
 
 let clock = Date.UTC(2026, 5, 2, 9, 0);
 const tick = (min = 3) => new Date((clock += min * 60_000)).toISOString();
@@ -192,12 +226,16 @@ const conversations = [
   conv({
     title: 'Landing page and a logo', project: 'Coding',
     turns: [
-      ['Make me a one-page landing site for a tea shop.',
+      [[text('Make me a one-page landing site for a tea shop. Here is the shopfront, for colours.'),
+        { type: 'image', filename: 'storefront.png', mime: 'image/png', width: 160, height: 100,
+          blobHash: sha(STOREFRONT), srcRef: 'https://claude.ai/api/example/files/storefront/preview' }],
         text('Here is a first version.'),
         { type: 'tool_use', name: 'artifacts', id: 'tu1', input: { command: 'create', id: 'tea-landing', type: 'text/html', title: 'Tea shop landing page',
           content: '<!doctype html>\n<html><head><style>body{font-family:Georgia,serif;margin:0;background:#f5efe6;color:#2d2a26}header{padding:48px;text-align:center}h1{font-size:40px;margin:0}p{color:#6b5f52}</style></head>\n<body><header><h1>Leaf &amp; Kettle</h1><p>Loose-leaf tea, brewed slowly.</p></header></body></html>' } },
         { type: 'tool_result', toolUseId: 'tu1', text: 'OK' }],
-      ['Make the headline warmer and add opening hours.',
+      [[text('Make the headline warmer and add opening hours — they are on the menu.'),
+        { type: 'file', filename: 'menu.pdf', mime: 'application/pdf', blobHash: sha(MENU_PDF),
+          text: 'Leaf & Kettle - menu', meta: { declaredBytes: MENU_PDF.length } }],
         { type: 'tool_use', name: 'artifacts', id: 'tu2', input: { command: 'update', id: 'tea-landing', old_str: 'Leaf &amp; Kettle', new_str: 'Welcome to Leaf &amp; Kettle' } },
         { type: 'tool_use', name: 'artifacts', id: 'tu3', input: { command: 'update', id: 'tea-landing', old_str: 'brewed slowly.</p>', new_str: 'brewed slowly.</p><p>Open daily, 8am – 6pm</p>' } },
         { type: 'tool_use', name: 'artifacts', id: 'tu4', input: { command: 'update', id: 'tea-landing', old_str: 'a string that is not there', new_str: 'x' } },
@@ -217,5 +255,15 @@ const pack = {
   conversations,
 };
 await writeFile(new URL('../fixtures/library.chatpack.json', import.meta.url), JSON.stringify(pack, null, 1));
+// The same library as a .chatpack.zip, with the attachments in it — the shape
+// the extension writes when it captures images and files.
+const zipped = await zip([
+  { name: 'manifest.json', data: JSON.stringify({ schemaVersion: '0.2', kind: 'chatpack', generator: pack.generator,
+    capturedAt: pack.createdAt, conversationCount: conversations.length, providers: ['claude', 'chatgpt'], hasOverlay: false }, null, 1) },
+  ...conversations.map((c) => ({ name: `conversations/${c.id}.chat.json`, data: JSON.stringify(c, null, 1) })),
+  ...[...BLOBS].map(([hash, data]) => ({ name: `blobs/${hash}`, data: new Uint8Array(data) })),
+]);
+await writeFile(new URL('../fixtures/library.chatpack.zip', import.meta.url), zipped);
+console.log(`fixtures/library.chatpack.zip — the same, plus ${BLOBS.size} attachments, ${(zipped.length / 1024).toFixed(1)} KB`);
 console.log(`fixtures/library.chatpack.json — ${conversations.length} conversations, ` +
   `${conversations.reduce((n, c) => n + c.messages.length, 0)} messages`);
