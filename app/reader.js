@@ -20,6 +20,8 @@ import * as SEC from '../packages/organize/sections.js';
 import * as BR from '../packages/organize/branches.js';
 import { diffWords } from '../packages/organize/diff.js';
 import * as GAL from '../packages/organize/gallery.js';
+import * as ART from '../packages/organize/artifacts.js';
+import { preview, drawable } from './lib/preview.js';
 import {
   S, R, PREFS, metaOf, convById, mainPath, folderPath, sectionsOf, setSection, clearSection,
   dropSections, removeTag, openConv, blockText, revealFolder, cardMovesOf, moveCard, resetCard,
@@ -47,7 +49,16 @@ export const TEMPLATES = {
 
 function renderBlock(b) {
   switch (b.type) {
-    case 'text': { const d = el('div', 'prose'); d.innerHTML = md(b.text); return d; }
+    case 'text': {
+      const d = el('div', 'prose');
+      d.innerHTML = md(b.text);
+      // A fenced SVG or HTML block can be drawn, so it gets the full code
+      // block — preview and source — rather than a bare <pre>.
+      for (const c of d.querySelectorAll('pre > code[data-lang]')) {
+        if (drawable(c.dataset.lang, c.textContent)) c.parentElement.replaceWith(codeBlock(c.textContent, c.dataset.lang));
+      }
+      return d;
+    }
     case 'code': return codeBlock(b.text || '', b.lang);
     case 'thinking': {
       const n = Array.isArray(b.summaries) ? b.summaries.length : 0;
@@ -58,7 +69,9 @@ function renderBlock(b) {
       return d;
     }
     case 'tool_use': {
-      const d = details(`Tool call · ${b.name || 'tool'}`, 'tool');
+      const e = ART.editOf(b);
+      const verb = { create: 'created', update: 'edited', insert: 'edited' }[e?.cmd] || 'changed';
+      const d = details(e ? `Artifact · ${e.title || e.key} · ${verb} — the finished version is in Gallery` : `Tool call · ${b.name || 'tool'}`, 'tool');
       d.lastChild.append(codeBlock(b.text || (b.input != null ? JSON.stringify(b.input, null, 2) : ''), b.lang));
       return d;
     }
@@ -109,6 +122,7 @@ function codeBlock(text, lang) {
   const w = el('div', 'code');
   const bar = el('div', 'code-bar');
   bar.append(el('span', null, lang || ''), el('span', 'grow'));
+  const kind = drawable(lang, text);
   const copy = iconBtn('copy', 'Copy', async () => {
     try { await navigator.clipboard.writeText(text); copy.classList.add('done'); setTimeout(() => copy.classList.remove('done'), 1200); }
     catch { /* clipboard refused — nothing useful to say */ }
@@ -116,7 +130,28 @@ function codeBlock(text, lang) {
   bar.append(copy);
   const pre = el('pre');
   pre.append(el('code', null, text));
-  w.append(bar, pre);
+  if (!kind) { w.append(bar, pre); return w; }
+
+  // Drawable: show it drawn, with the source a click away.
+  const view = el('div', 'pv');
+  const tabs = el('div', 'pv-tabs');
+  const tab = (label, which) => {
+    const b = el('button', 'pv-tab', label);
+    b.type = 'button';
+    b.onclick = () => show(which);
+    return b;
+  };
+  const tP = tab('Preview', 'preview'), tS = tab('Source', 'source');
+  const show = (which) => {
+    view.textContent = '';
+    view.append(which === 'preview' ? preview(text, kind) : pre);
+    tP.classList.toggle('on', which === 'preview');
+    tS.classList.toggle('on', which === 'source');
+  };
+  tabs.append(tP, tS);
+  bar.insertBefore(tabs, bar.children[1]);
+  w.append(bar, view);
+  show('preview');
   return w;
 }
 
@@ -935,7 +970,7 @@ function digest(col, groups, kids, ctx) {
 
 /* --------------------------------------------------------------- gallery */
 
-const KIND_ICON = { code: 'code', table: 'table', image: 'image', file: 'file', tool: 'tool', link: 'link' };
+const KIND_ICON = { artifact: 'file', code: 'code', table: 'table', image: 'image', file: 'file', tool: 'tool', link: 'link' };
 
 function galleryCard(it, t, n) {
   const card = el('div', `gitem k-${it.kind}${it.isError ? ' err' : ''}`);
@@ -957,7 +992,10 @@ function galleryCard(it, t, n) {
 
   const body = el('div', 'gb');
   let long = false;
-  if (it.kind === 'code' || it.kind === 'tool' || (it.kind === 'file' && it.text)) {
+  const drawn = it.kind === 'code' && drawable(it.lang, it.text);
+  if (drawn) {
+    body.append(preview(it.text, drawn));
+  } else if (it.kind === 'code' || it.kind === 'tool' || (it.kind === 'file' && it.text)) {
     const pre = el('pre');
     pre.append(el('code', null, it.text || ''));
     body.append(pre);
@@ -1000,13 +1038,83 @@ function galleryCard(it, t, n) {
   return card;
 }
 
+const ART_LABEL = { html: 'HTML page', svg: 'SVG drawing', react: 'React component', mermaid: 'Mermaid diagram', markdown: 'Document', code: 'Code' };
+const ART_EXT = { html: 'html', svg: 'svg', react: 'jsx', mermaid: 'mmd', markdown: 'md' };
+const LANG_EXT = { python: 'py', javascript: 'js', typescript: 'ts', rust: 'rs', bash: 'sh', ruby: 'rb', csharp: 'cs', markdown: 'md', yaml: 'yml' };
+
+/** Save a document to disk. Made here, from text already on the page; nothing is fetched. */
+function saveText(text, name, mime = 'text/plain') {
+  const url = URL.createObjectURL(new Blob([text], { type: `${mime};charset=utf-8` }));
+  const a = el('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+/** A rebuilt artifact: the finished document, drawn when it can be. */
+function artifactCard(a) {
+  const card = el('div', `gitem k-artifact kind-${a.kind}`);
+  const head = el('div', 'gh');
+  head.append(icon('file'), el('span', 'gl', a.title), el('span', 'grow'));
+  const from = el('button', 'gfrom', `#${a.turn + 1}`);
+  from.type = 'button';
+  from.title = `Last changed in exchange ${a.turn + 1}. Open it.`;
+  from.onclick = () => openSheet(a.turn);
+  head.append(from);
+  card.append(head);
+
+  const sub = [ART_LABEL[a.kind] + (a.kind === 'code' && a.lang ? ` · ${a.lang}` : ''),
+    a.edits > 1 ? `${a.edits} versions` : 'one version'];
+  const meta = el('div', 'gsub', sub.join(' · '));
+  if (a.failed) {
+    meta.append(el('span', 'gwarn', ` · ${plural(a.failed, 'edit')} could not be applied — shown as far as it could be rebuilt`));
+  }
+  card.append(meta);
+
+  const body = el('div', 'gb');
+  const drawn = preview(a.content, a.kind);
+  if (drawn) body.append(drawn);
+  else if (a.kind === 'markdown') { const d = el('div', 'prose'); d.innerHTML = md(a.content); body.append(d); }
+  else {
+    const pre = el('pre');
+    pre.append(el('code', null, a.content));
+    body.append(pre);
+    if (a.kind === 'react' || a.kind === 'mermaid') {
+      card.append(el('div', 'gnote', 'Displaying this would mean running code the model wrote, so it is shown as source.'));
+    }
+  }
+  card.append(body);
+
+  const foot = el('div', 'gf');
+  foot.append(el('span', 'grow'));
+  if (!drawn && a.content.split('\n').length > 12) {
+    const more = btn(null, 'Show all', () => {
+      more.lastChild.textContent = card.classList.toggle('full') ? 'Show less' : 'Show all';
+    }, 'ghost');
+    foot.append(more);
+  }
+  const base = String(a.key).split('/').pop();
+  const ext = ART_EXT[a.kind] || LANG_EXT[a.lang] || a.lang || 'txt';
+  const name = /\.[a-z0-9]+$/i.test(base) ? base : `${(a.title || 'artifact').replace(/[\\/:*?"<>|]+/g, ' ').trim()}.${ext}`;
+  foot.append(iconBtn('save', `Save as ${name}`, () => saveText(a.content, name, a.kind === 'svg' ? 'image/svg+xml' : a.kind === 'html' ? 'text/html' : 'text/plain')));
+  const copy = iconBtn('copy', 'Copy', async () => {
+    try { await navigator.clipboard.writeText(a.content); copy.classList.add('done'); setTimeout(() => copy.classList.remove('done'), 1200); }
+    catch { /* refused */ }
+  });
+  foot.append(copy);
+  card.append(foot);
+  return card;
+}
+
 /**
  * Everything that is not prose — code, tables, images, files, tool calls,
  * links — as a grid, filterable by kind, each with its way back to the
  * exchange it came from. The answer to "where was that snippet".
  */
 function gallery(col, groups, kids, ctx) {
-  const all = GAL.items(ctx.turns);
+  const arts = ART.artifacts(ctx.turns).map((a) => ({ kind: 'artifact', turn: a.turn, art: a }));
+  const all = [...arts, ...GAL.items(ctx.turns)];
   const c = GAL.counts(all);
   if (S.galleryKind && !c[S.galleryKind]) S.galleryKind = '';
 
@@ -1031,7 +1139,7 @@ function gallery(col, groups, kids, ctx) {
   const grid = el('div', 'gal');
   for (const it of all) {
     if (S.galleryKind && it.kind !== S.galleryKind) continue;
-    grid.append(galleryCard(it, ctx.turns[it.turn], it.turn));
+    grid.append(it.kind === 'artifact' ? artifactCard(it.art) : galleryCard(it, ctx.turns[it.turn], it.turn));
   }
   col.append(grid);
 }

@@ -7,10 +7,15 @@
    of their own, so they are found there too — otherwise a ChatGPT reply,
    which puts everything in one text block, would show an empty gallery.
 
-   Pure: turns in, plain items out.
+   Pure: turns in, plain items out. Artifacts are rebuilt separately
+   (artifacts.js); the tool calls that build them are left out of here, since
+   the finished document is what you want, not its edit history.
    ========================================================================== */
 
+import { editOf } from './artifacts.js';
+
 export const KINDS = {
+  artifact: 'Artifacts',
   code: 'Code',
   table: 'Tables',
   image: 'Images',
@@ -62,6 +67,7 @@ export function links(text) {
  */
 export function items(turns) {
   const out = [];
+  const edits = new Set(); // tool_use ids of artifact edits, whose "OK" results are noise too
   turns.forEach((t, turn) => {
     for (const m of [t.user, ...t.replies].filter(Boolean)) {
       const role = m.role;
@@ -84,9 +90,11 @@ export function items(turns) {
             add({ kind: 'file', title: b.filename || 'File', text: b.text || '' });
             break;
           case 'tool_use':
+            if (editOf(b)) { if (b.id) edits.add(b.id); break; }
             add({ kind: 'tool', title: b.name || 'tool', text: b.text || (b.input != null ? JSON.stringify(b.input, null, 2) : '') });
             break;
           case 'tool_result':
+            if (b.toolUseId && edits.has(b.toolUseId)) break;
             add({ kind: 'tool', title: b.isError ? 'Result · error' : 'Result', text: b.text || '', isError: !!b.isError });
             break;
           case 'citation':

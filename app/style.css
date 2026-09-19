@@ -871,3 +871,26 @@ input.inline {
 .gref { padding: 12px; color: var(--fg-3); font-size: 12.5px; }
 .gf { display: flex; align-items: center; gap: 4px; padding: 4px 6px; border-top: 1px solid var(--line); }
 .gf .btn { height: 26px; padding: 0 8px; font-size: 12.5px; }
+
+/* ---------------------------------------------------------------- previews */
+/* Drawable code: the drawing, with the source one tab away. */
+.pv-tabs { display: inline-flex; gap: 2px; margin-left: 10px; padding: 2px; background: var(--bg); border-radius: 6px; }
+.pv-tab { height: 20px; padding: 0 8px; border: 0; border-radius: 4px; background: none; color: var(--fg-3); font: 11.5px var(--sans); }
+.pv-tab.on { background: var(--bg-sunk); color: var(--fg); box-shadow: 0 0 0 1px var(--line); }
+.pv { padding: 0 12px 12px; }
+.pv > pre { margin: 0 -12px -12px; }
+/* A white page to draw on, in either theme — most SVGs assume one. */
+.pv-svg { display: block; max-width: 100%; max-height: 420px; margin: 0 auto; background: #fff; border-radius: 6px; padding: 8px; }
+.pv-frame { display: block; width: 100%; height: 360px; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+.pv-gate {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 14px;
+  border: 1px dashed var(--line-2); border-radius: 8px; color: var(--fg-2); font-size: 12.5px;
+}
+.pv-gate p { margin: 0; }
+.gb .pv-svg { margin: 10px auto; max-height: 220px; }
+.gb .pv-gate { margin: 10px; }
+.gb .pv-frame { height: 220px; border: 0; border-radius: 0; }
+.gsub { padding: 6px 12px 0; color: var(--fg-3); font-size: 11.5px; }
+.gwarn { color: var(--danger); }
+.gnote { padding: 6px 12px 0; color: var(--fg-3); font-size: 11.5px; font-style: italic; }
+.gb:has(> .pv-svg), .gb:has(> .pv-gate), .gb:has(> .pv-frame) { max-height: none; -webkit-mask-image: none; mask-image: none; }

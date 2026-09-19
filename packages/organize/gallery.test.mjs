@@ -48,3 +48,13 @@ test('collects every kind, in order, tagged with the exchange it came from', () 
 test('a conversation of plain prose has an empty gallery', () => {
   assert.deepEqual(items([turn('hi', [text('Just words, nothing else.')])]), []);
 });
+
+test('artifact edits and their results are left to the artifact, not listed as tool calls', () => {
+  const t = [turn('make a page', [
+    { type: 'tool_use', id: 'u1', name: 'artifacts', input: { command: 'create', id: 'p', content: '<p>x</p>' } },
+    { type: 'tool_result', toolUseId: 'u1', text: 'OK' },
+    { type: 'tool_use', id: 'u2', name: 'web_search', input: { q: 'x' } },
+    { type: 'tool_result', toolUseId: 'u2', text: 'found' },
+  ])];
+  assert.deepEqual(items(t).map((x) => x.title), ['web_search', 'Result']);
+});
